@@ -109,18 +109,11 @@ function ses(tur) {
 }
 
 // ============================================================
-// Kalıcı durum (bu tarayıcıda saklanır)
+// Kalıcı durum: tarayıcıda localStorage["se422-ders-v1"], sunucuda veri/ilerleme.json kopyası.
+// Şema sürümü, göç, yedek ve birleştirme static/kayit.js'de.
 // ============================================================
-const ANAHTAR = "se422-ders-v1";
-const durum = (() => {
-  const varsayilan = { tamamlanan: {}, ogeler: {}, xp: 0, gunluk: {}, ses: true, sinavlar: [], gorulenSinav: [], kodlar: {},
-    konular: {}, oturumlar: [], gorulenUretilen: [], tema: "sistem", sureler: {}, notAyar: { bosBolumler: "goster" } };
-  try {
-    return { ...varsayilan, ...JSON.parse(localStorage.getItem(ANAHTAR) || "{}") };
-  } catch {
-    return varsayilan;
-  }
-})();
+const ANAHTAR = KAYIT.ANAHTAR;
+const durum = KAYIT.yukle();
 const TEMALAR = {
   acik: { ad: "Açık", ikon: "☀️", sonraki: "koyu" },
   koyu: { ad: "Koyu", ikon: "🌙", sonraki: "sistem" },
@@ -139,8 +132,12 @@ function temaSec(tema) {
   menuCiz();
   sagPanelCiz();
 }
-function kaydet() {
+function yerelKaydet() {
   try { localStorage.setItem(ANAHTAR, JSON.stringify(durum)); } catch { /* depolama kapalı olabilir */ }
+}
+function kaydet() {
+  yerelKaydet();
+  KAYIT.planla(durum); // birkaç saniye sonra sunucu kopyasına da yazılır
 }
 
 // ============================================================
@@ -166,14 +163,66 @@ UNITELER.forEach((unite) => {
 });
 DUGUMLER.push({ tip: "sinav", id: "final" });
 const dersBul = (id) => DERSLER.find((d) => d.ders.id === id);
+// Bölüm numarası: "no" alanı verilmiş bölüm (slayt dışı "Veri bilimi nedir?" = 0) diğerlerinin numarasını kaydırmaz
+const uniteNo = (u) => u.no ?? UNITELER.filter((x) => x.no === undefined).indexOf(u) + 1;
+// Anlatım kartının etiketi: slayt numarası ya da slayt dışı kartlarda "Ek bilgi" / "Slayt dışı"
+const kartEtiketi = (a) => a.etiket || slaytYazisi(a.slayt);
+
+// ============================================================
+// Ara sınav kapsamı (tek kaynak: static/sinav-kapsam.json) — öncelik: slayt > ders > bölüm
+// ============================================================
+let KAPSAM = null;
+const ADIM_KONUM = new WeakMap(); // anlatım kartı → { u, d }
+UNITELER.forEach((u) => u.dersler.forEach((d) => d.adimlar.forEach((a) => ADIM_KONUM.set(a, { u, d }))));
+function kapsamDers(u, d) {
+  const ku = KAPSAM?.uniteler?.[u.id];
+  return ku ? (ku.dersler?.[d.id]?.kapsam || ku.kapsam) : null;
+}
+function kapsamSlayt(adim) {
+  const konum = ADIM_KONUM.get(adim);
+  if (!konum) return null;
+  const ku = KAPSAM?.uniteler?.[konum.u.id];
+  const kd = ku?.dersler?.[konum.d.id];
+  const n = adim.slayt?.[0];
+  return (n != null && kd?.slaytlar?.[n]?.kapsam) || kapsamDers(konum.u, konum.d);
+}
+function kapsamNotu(u, d, adim) {
+  const ku = KAPSAM?.uniteler?.[u.id];
+  const kd = d && ku?.dersler?.[d.id];
+  return (adim && kd?.slaytlar?.[adim.slayt?.[0]]?.not) || kd?.not || ku?.not || "";
+}
+// Bölümün özeti: tamamı içinde → "ici", bir kısmı → "kismi", hiçbiri ama belirsiz var → "belirsiz", tamamı dışı → "disi"
+function kapsamBolum(u) {
+  const k = new Set(u.dersler.map((d) => kapsamDers(u, d)));
+  if (k.has(null)) return null;
+  if (k.has("ici")) return k.size === 1 ? "ici" : "kismi";
+  return k.has("belirsiz") ? "belirsiz" : "disi";
+}
+const sinavFiltresi = () => !!durum.sadeceAraSinav && !!KAPSAM;
+const dersSinavDisi = (u, d) => kapsamDers(u, d) === "disi";
+function kapsamRozet(k, not = "") {
+  if (k === "ici") return `<span class="kapsam-rozet" title="Ara sınav kapsamında">Ara sınav</span>`;
+  if (k === "kismi") return `<span class="kapsam-rozet" title="Bu bölümün bir kısmı ara sınav kapsamında">Ara sınav · kısmen</span>`;
+  if (k === "belirsiz") return `<span class="kapsam-rozet belirsiz" title="${kacis(not || "Ara sınav kapsamında olup olmadığı belirsiz")}">Ara sınav?</span>`;
+  return "";
+}
+const kartKapsamSinifi = (adim) => (kapsamSlayt(adim) === "disi" ? " kapsam-disi" : "");
+const kartKapsamRozet = (adim) => {
+  const k = kapsamSlayt(adim);
+  const konum = ADIM_KONUM.get(adim);
+  return k === "ici" || k === "belirsiz" ? kapsamRozet(k, konum ? kapsamNotu(konum.u, konum.d, adim) : "") : "";
+};
 
 // Not bağlamı: her anlatım kartı bir bölüm + slayta bağlanır (static/notlar.js kullanır)
 const ADIM_BAGLAM = new WeakMap();
-UNITELER.forEach((u, ui) => u.dersler.forEach((d) => d.adimlar.forEach((a) => {
-  if (a.tip === "ogren") {
-    ADIM_BAGLAM.set(a, { unite: u.id, uniteNo: ui + 1, uniteBaslik: u.baslik, slayt: a.slayt?.[0] ?? 0, slaytYazisi: slaytYazisi(a.slayt), baslik: a.baslik });
-  }
-})));
+UNITELER.forEach((u) => {
+  let ekNo = 900; // slayt numarası olmayan (slayt dışı) kartlara bölüm içinde benzersiz not anahtarı
+  u.dersler.forEach((d) => d.adimlar.forEach((a) => {
+    if (a.tip === "ogren") {
+      ADIM_BAGLAM.set(a, { unite: u.id, uniteNo: uniteNo(u), uniteBaslik: u.baslik, slayt: a.slayt?.[0] ?? ekNo++, slaytYazisi: kartEtiketi(a), baslik: a.baslik });
+    }
+  }));
+});
 const baglamAttr = (adim) => (ADIM_BAGLAM.has(adim) ? ` data-not-baglam="${kacis(JSON.stringify(ADIM_BAGLAM.get(adim)))}"` : "");
 // Bir derste soru ekranındayken not paneli, dersin o ana kadarki son anlatım kartına bağlanır
 function dersBaglami(dersId, adimSirasi) {
@@ -194,6 +243,8 @@ function ogeGuncelle(id, dogru) {
   o.gorulme += 1;
   o.son = Date.now();
   durum.ogeler[id] = o;
+  const im = KAYIT.imza(id); // soru sırası ileride kayarsa kaydı bulmak için içerik imzası
+  if (im) durum.ogeImza[id] = im;
   kaydet();
 }
 const zayifMi = (id) => { const o = oge(id); return o.gorulme > 0 && o.kutu === 0; };
@@ -203,7 +254,13 @@ function ustalik(ders) {
   return ids.reduce((t, id) => t + Math.min(oge(id).kutu, USTA_KUTU) / USTA_KUTU, 0) / Math.max(ids.length, 1);
 }
 const dersUstaMi = (ders) => ders.ogeIdleri.length > 0 && ders.ogeIdleri.every((id) => oge(id).kutu >= USTA_KUTU);
-const aktifDugumIndeksi = () => DUGUMLER.findIndex((d) => d.tip !== "sinav" && !durum.tamamlanan[d.id]);
+// Slayt dışı içerik ("Veri bilimi nedir?", "Ödev 1 – Sınav kavramları" bölümleri ve "Ek bilgi" dersleri) isteğe bağlıdır:
+// her zaman açıktır ama öğrenme yolunda sırayı bekletmez (eklenmeleri mevcut ilerlemeyi kilitlemesin diye)
+const istegeBagli = (d) => d.tip !== "sinav" && (d.unite?.no !== undefined || !!d.unite?.istegeBagli || (d.tip === "ders" && !!d.ders.ekBilgi));
+const aktifDugumIndeksi = () => DUGUMLER.findIndex((d) => d.tip !== "sinav" && !durum.tamamlanan[d.id] && !istegeBagli(d));
+// Öğrenme yolundaki kilit/aktif: "Sadece ara sınav konuları" açıkken kapsam dışı dersler ve bölümler sırayı bekletmez
+const yolGizli = (d) => sinavFiltresi() && ((d.tip === "ders" && dersSinavDisi(d.unite, d.ders)) || (d.tip === "tekrar" && kapsamBolum(d.unite) === "disi"));
+const yolAktifIndeksi = () => DUGUMLER.findIndex((d) => d.tip !== "sinav" && !durum.tamamlanan[d.id] && !yolGizli(d) && !istegeBagli(d));
 const sinavAcik = () => aktifDugumIndeksi() === -1 && zayifIdler().length === 0;
 function seri() {
   let n = 0;
@@ -263,7 +320,10 @@ const dersAdi = (konu) => dersBul(konu)?.ders.baslik || konu || "";
 const zayifSayisi = (konu) => dersBul(konu)?.ders.ogeIdleri.filter(zayifMi).length || 0;
 
 function soruMetni(adim) {
-  const ilk = (adim.kod || (Array.isArray(adim.satirlar) ? adim.satirlar.join("\n") : "")).split("\n")[0];
+  // Kod metni: "kod" (string), boşluk sorusunda "metin", hata bulmada "satirlar" (tablo sorusunun satırları metin değildir)
+  const kod = typeof adim.kod === "string" ? adim.kod : typeof adim.metin === "string" ? adim.metin
+    : Array.isArray(adim.satirlar) && adim.satirlar.every((s) => typeof s === "string") ? adim.satirlar.join("\n") : "";
+  const ilk = kod.split("\n")[0];
   const metin = (adim.soru || adim.ifade || "") + (ilk ? ` — ${ilk}` : "");
   return metin.length > 150 ? metin.slice(0, 147) + "…" : metin;
 }
@@ -305,7 +365,8 @@ function puanDurumu(puan, zayif = 0) {
 const konuDurumu = (konu) => puanDurumu(konuPuani(konu), zayifSayisi(konu));
 
 function dikkatKonulari() {
-  return DERSLER.map(({ ders }) => ({ konu: ders.id, puan: konuPuani(ders.id), zayif: zayifSayisi(ders.id) }))
+  return DERSLER.filter(({ ders, unite }) => !sinavFiltresi() || !dersSinavDisi(unite, ders))
+    .map(({ ders }) => ({ konu: ders.id, puan: konuPuani(ders.id), zayif: zayifSayisi(ders.id) }))
     .filter((x) => x.puan !== null && ["zayif", "orta"].includes(puanDurumu(x.puan, x.zayif)))
     .sort((a, b) => a.puan - b.puan || b.zayif - a.zayif);
 }
@@ -388,7 +449,7 @@ function baremCiz() {
     }).join("");
     return `<details class="bolum-satir">
       <summary data-ipucu="${kacis(ipucu)}">
-        <span class="bs-ad">${ui + 1}. ${kacis(u.baslik)}</span>
+        <span class="bs-ad">${uniteNo(u)}. ${kacis(u.baslik)}</span>
         <span class="barem-cubuk"><span class="${o.durum}" style="width:${o.puan ?? 0}%"></span></span>
         <span class="bs-deger">${o.puan === null ? "—" : `%${o.puan}`}</span>
         ${durumRozeti(o.durum)}
@@ -397,10 +458,10 @@ function baremCiz() {
         <tbody>${dersSatirlari}</tbody></table></details>`;
   }).join("");
 
-  const TUR = { ders: "Ders", tekrar: "Bölüm tekrarı", pekistir: "Pekiştirme", sinav: "Sınav" };
+  const TUR = { ders: "Ders", tekrar: "Bölüm tekrarı", pekistir: "Pekiştirme", sinav: "Sınav", arasinav: MOD_ADI };
   const gecmis = durum.oturumlar.slice(-10).reverse().map((o) => {
     const yuzde = o.n ? Math.round((100 * o.d) / o.n) : 100;
-    return `<div class="liste-satir"><div class="ad">${TUR[o.tur] || o.tur}${o.b ? ` · ${kacis(o.b)}` : ""}
+    return `<div class="liste-satir"><div class="ad">${TUR[o.tur] || o.tur}${o.b && o.tur !== "arasinav" ? ` · ${kacis(o.b)}` : ""}
       <small>${new Date(o.t).toLocaleString("tr-TR")}</small></div>
       <span class="sayi">${o.d}/${o.n}</span>${durumRozeti(puanDurumu(yuzde))}</div>`;
   }).join("");
@@ -417,7 +478,79 @@ function baremCiz() {
     <p class="sayfa-aciklama">Bir bölüme tıkla, ders ders ayrıntısını gör.</p>
     <div class="bolum-grafik">${satirlar}</div>
     ${gecmis ? `<h2 class="bolum-baslik">Son oturumlar</h2><div class="kart">${gecmis}</div>` : ""}
+    ${yedekKartiHtml()}
   </div>`;
+}
+
+// ============================================================
+// İlerleme yedeği: JSON dışa / içe aktarma (Barem sayfasının sonunda)
+// ============================================================
+const ESKI_ADRES = location.hostname === "localhost";
+const STANDART_ADRES = `http://127.0.0.1:${location.port || 8001}`;
+function yedekKartiHtml() {
+  const sk = KAYIT.sunucu;
+  const sunucu = sk.hata ? "⚠️ Sunucu kopyasına yazılamadı (sunucu kapalı olabilir); ilerleme bu tarayıcıda duruyor."
+    : sk.son ? `Sunucu kopyası (veri/ilerleme.json) güncel · ${new Date(sk.son).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}`
+      : "Sunucu kopyası eşitleniyor…";
+  return `<h2 class="bolum-baslik" id="ilerleme-yedegi">💾 İlerleme yedeği</h2>
+    <div class="kart yedek-kart">
+      ${ESKI_ADRES ? `<p class="yedek-uyari">Bu sayfayı <b>localhost</b> adresinden açtın. Tarayıcı localhost ile 127.0.0.1'i farklı site sayar.
+        İlerlemen sunucuya kopyalandı; bundan sonra hep <a href="${STANDART_ADRES}/">${STANDART_ADRES}</a> adresini kullan.</p>` : ""}
+      <p>Tamamlanan dersler, XP ve seri, soru ustalığı, barem, deneme ve sınav sonuçları, kodların ve notların tek bir JSON dosyasına yazılır.
+        Yeni klasöre kurulumda, başka tarayıcıda ya da başka cihazda <b>İçe aktar</b> ile geri yükle. İçe aktarma mevcut ilerlemeyi silmez; ikisini birleştirir.</p>
+      <div class="btn-satir"><button class="dbtn mavi kucuk" data-ilerleme-disa>⬇ İlerlemeyi dışa aktar (JSON)</button>
+        <button class="dbtn beyaz kucuk" data-ilerleme-ice>⬆ İçe aktar</button>
+        <button class="metin-btn yedek-yardim" data-git="ilerleme-yardim">Nasıl çalışır?</button>
+        <input type="file" id="ilerleme-dosya" accept="application/json,.json" hidden></div>
+      <p class="yedek-durum" id="yedek-durum" role="status">${kacis(sunucu)} · Kayıt sürümü v${durum.schemaVersion}</p>
+    </div>`;
+}
+function yedekDurum(m) { const el = $("#yedek-durum"); if (el) el.textContent = m; }
+async function ilerlemeDisaAktar() {
+  if (typeof bekleyenleriGonder === "function") await bekleyenleriGonder();
+  const notlar = typeof NOT !== "undefined" ? Object.fromEntries(Object.entries(NOT.notlar).filter(([, n]) => n.metin?.trim())) : {};
+  const veri = KAYIT.disaAktarVeri(durum, notlar);
+  dosyaIndir(new Blob([JSON.stringify(veri, null, 1)], { type: "application/json" }), `se422-ilerleme-${yerelTarih()}.json`);
+  yedekDurum(`Dışa aktarıldı: ${Object.keys(durum.tamamlanan).length} tamamlanan adım, ${durum.xp} XP, ${Object.keys(notlar).length} not`);
+}
+async function ilerlemeIceAktar(dosya) {
+  let j;
+  try { j = JSON.parse(await dosya.text()); } catch { yedekDurum("Dosya okunamadı: geçerli bir JSON değil."); return; }
+  const gelen = KAYIT.dosyadanIlerleme(j);
+  const notlar = j && typeof j.notlar === "object" && !Array.isArray(j.notlar) ? j.notlar : null;
+  if (!gelen && !notlar) { yedekDurum("Dosyada ilerleme ya da not bulunamadı."); return; }
+  const mesaj = [];
+  if (gelen) {
+    // Önce bu tarayıcıdaki kaydı yedekle, sonra (göç ettirilmiş) gelen kaydı sunucuda mevcut kayıtla birleştir
+    await KAYIT.yedekAl(JSON.parse(JSON.stringify(durum)), "ice-aktarma-oncesi");
+    const g = KAYIT.gocEt(gelen);
+    try {
+      await KAYIT.gonder(durum);                       // sunucu kopyası bu tarayıcının son haliyle güncel olsun
+      const r = await KAYIT.gonder(g.veri, true);      // gelen kayıt + mevcut kayıt = birleşik
+      KAYIT.durumuDegistir(durum, KAYIT.gocEt(r.ilerleme).veri);
+      yerelKaydet();
+      mesaj.push(`İlerleme birleştirildi (dosya v${g.eskiSurum}${g.rapor.length ? `, ${g.rapor.length} göç adımı` : ""})`);
+    } catch {
+      yedekDurum("İçe aktarılamadı: sunucuya ulaşılamadı. Uygulamayı python3 app.py ile çalıştırıp tekrar dene.");
+      return;
+    }
+  }
+  if (notlar && typeof notlariIceAktarVeri === "function") mesaj.push(await notlariIceAktarVeri(notlar));
+  temaUygula();
+  yenile();
+  yedekDurum(mesaj.join(" · "));
+}
+document.addEventListener("change", (e) => {
+  if (e.target.id === "ilerleme-dosya" && e.target.files[0]) { ilerlemeIceAktar(e.target.files[0]); e.target.value = ""; }
+});
+addEventListener("pagehide", () => KAYIT.hemenGonder(durum));
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") KAYIT.hemenGonder(durum); });
+
+function sinavFiltresiHtml() {
+  if (!KAPSAM) return "";
+  const acik = !!durum.sadeceAraSinav;
+  return `<div class="filtre-satir"><button class="filtre-btn ${acik ? "acik" : ""}" data-sinav-filtre aria-pressed="${acik}">
+    <span class="kutu-isaret">${acik ? "✓" : ""}</span>Sadece ara sınav konuları</button></div>`;
 }
 
 function dikkatBandi() {
@@ -429,7 +562,7 @@ function dikkatBandi() {
     <div class="btn-satir"><button class="dbtn mavi kucuk" data-pekistir>💪 Pekiştir</button><button class="dbtn beyaz kucuk" data-git="barem">📊 Barem</button></div></div>`;
 }
 
-function notModal(konu) {
+function notModal(konu, slayt) {
   const bilgi = dersBul(konu);
   if (!bilgi) return;
   const { ders, unite } = bilgi;
@@ -444,6 +577,11 @@ function notModal(konu) {
   kap.addEventListener("click", (e) => { if (e.target === kap || e.target.closest(".kapat")) kapat(); });
   kap.addEventListener("keydown", (e) => { if (e.key === "Escape") kapat(); });
   kap.querySelector(".kapat").focus();
+  if (slayt !== undefined) {
+    const kart = [...kap.querySelectorAll("[data-not-baglam]")].find((k) => { try { return JSON.parse(k.dataset.notBaglam).slayt === slayt; } catch { return false; } });
+    kart?.closest(".not-kart")?.classList.add("hedef-kart");
+    kart?.scrollIntoView({ block: "start" });
+  }
 }
 
 // Grafik ipucu: data-ipucu taşıyan öğelerin üzerine gelince
@@ -462,7 +600,9 @@ document.addEventListener("mousemove", (e) => {
 // ============================================================
 // Sayfa iskeleti: menü, sağ panel
 // ============================================================
-let sayfa = ["ogren", "pekistir", "barem", "notlar", "claude", "sinav"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "ogren";
+// Ara sınav denemesi modunun görünen adı (id/route/anahtarlar "arasinav" olarak kalır)
+const MOD_ADI = "Gökçen Tombul Sınav";
+let sayfa = ["ogren", "pekistir", "barem", "notlar", "claude", "arasinav", "sinav", "ilerleme-yardim"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "ogren";
 let acikDugum = null;
 
 function menuCiz() {
@@ -473,8 +613,10 @@ function menuCiz() {
     { id: "barem", ikon: "📊", yazi: "Barem" },
     { id: "notlar", ikon: "📖", yazi: "Notlar" },
     { id: "claude", ikon: "✳️", yazi: "Claude'un notları" },
+    { id: "arasinav", ikon: "⏱️", yazi: MOD_ADI },
     { id: "sinav", ikon: "🏆", yazi: "Sınav" },
     { id: "terminal", ikon: "💻", yazi: "Terminal" },
+    { id: "ilerleme-yardim", ikon: "🛟", yazi: "İlerleme nasıl korunur" },
   ];
   const html = ogeler.map((o) => `<button class="menu-ogesi ${sayfa === o.id ? "aktif" : ""}" data-git="${o.id}">
       <span class="ikon">${o.ikon}</span><span class="yazi">${o.yazi}</span>${o.rozet ? `<span class="menu-rozet">${o.rozet}</span>` : ""}</button>`).join("");
@@ -493,23 +635,51 @@ function istatistikHtml() {
   </div>`;
 }
 
+// Ara sınav kapsamı (yalnızca kapsam içi dersler) için kalan süre, kişisel hız katsayısıyla
+function araSinavKalanDk() {
+  const katsayi = hizKatsayisi() || 1;
+  return DERSLER.filter(({ ders, unite }) => kapsamDers(unite, ders) === "ici" && !durum.tamamlanan[ders.id])
+    .reduce((t, { ders }) => t + SURE.ders(ders) * katsayi, 0);
+}
+// Sağ paneldeki bölüm satırında küçük kapsam işareti (dolu: kapsam içi, yarım: kısmen, boş: belirsiz)
+function kapsamNokta(u) {
+  const k = KAPSAM ? kapsamBolum(u) : null;
+  if (!k || k === "disi") return `<span class="kapsam-nokta yok" aria-hidden="true"></span>`;
+  const ad = { ici: "Ara sınav kapsamında", kismi: "Kısmen ara sınav kapsamında", belirsiz: "Ara sınav kapsamı belirsiz" }[k];
+  return `<span class="kapsam-nokta ${k}" title="${ad}" aria-label="${ad}"></span>`;
+}
+
 function sagPanelCiz() {
   const bugunXp = durum.gunluk[yerelTarih()] || 0;
   const k = kalanSure();
-  const uniteler = UNITELER.map((u) => {
-    const tamam = u.dersler.filter((d) => durum.tamamlanan[d.id]).length;
-    return `<div class="unite-ilerleme-satir" style="${renkStil(u.renk)}"><span>${kacis(u.baslik)}</span>
-      <div class="cubuk"><div style="width:${(tamam / u.dersler.length) * 100}%"></div></div>
-      ${k.bolumler[u.id] < 0.5 ? `<small class="sure-kucuk">✓</small>` : sureEtiketiHtml(u)}</div>`;
+  // Şu an çalışılan bölüm: öğrenme yolundaki aktif düğümün bölümü
+  const aktifUnite = DUGUMLER[aktifDugumIndeksi()]?.unite;
+  const katsayi = hizKatsayisi() || 1;
+  const uniteler = UNITELER.filter((u) => !(sinavFiltresi() && kapsamBolum(u) === "disi")).map((u) => {
+    // İlerleme: tamamlanan dersler + bölüm tekrarı (bitince çubuk dolar)
+    const biten = u.dersler.filter((d) => durum.tamamlanan[d.id]).length + (durum.tamamlanan[`${u.id}-tekrar`] ? 1 : 0);
+    const oran = biten / (u.dersler.length + 1);
+    const tamam = k.bolumler[u.id] < 0.5;
+    const tahmin = SURE.yazi(SURE.unite(u).toplam * katsayi);
+    const harcananDk = Math.round(harcananSn(u) / 60);
+    const sure = tamam ? "✓ Tamamlandı" : harcananDk >= 1 ? `${SURE.yazi(harcananDk)} / ${tahmin}` : tahmin;
+    const sinif = ["ilerleme-satir", tamam ? "tamam" : "", u === aktifUnite ? "aktif" : ""].join(" ");
+    return `<button class="${sinif}" style="${renkStil(u.renk)}" data-unite-git="${u.id}" title="${kacis(u.baslik)} · ${sure}"
+        ${u === aktifUnite ? 'aria-current="step"' : ""}>
+      <span class="ilerleme-ust">${kapsamNokta(u)}<span class="ilerleme-ad">${kacis(u.baslik)}</span><span class="ilerleme-sure">${sure}</span></span>
+      <span class="ilerleme-cubuk"><span style="width:${tamam ? 100 : Math.round(oran * 100)}%"></span></span></button>`;
   }).join("");
   $("#sag-panel").innerHTML = `
     ${istatistikHtml()}
     <div class="kart"><h3>Günlük hedef</h3>
       <div class="hedef-satir"><div class="cubuk sari"><div style="width:${Math.min(bugunXp / GUNLUK_HEDEF, 1) * 100}%"></div></div>
       <span>${bugunXp}/${GUNLUK_HEDEF} XP</span></div></div>
-    <div class="kart"><h3>Bölüm ilerlemesi</h3>
-      <p class="kalan-sure">${k.toplam < 0.5 ? "🎉 Platformu bitirdin" : `Toplam kalan: <b>≈ ${SURE.yazi(k.toplam)}</b>${k.kisisel ? " · senin hızına göre" : ""}`}</p>
-      <div class="unite-ilerleme">${uniteler}</div></div>
+    <div class="kart ilerleme-kart"><h3>Bölüm ilerlemesi
+        <span class="sure-ipucu tahmini-ipucu" tabindex="0" role="button" data-sure-ipucu>(tahmini)<span class="ipucu-balon" role="tooltip">${sureIpucuMetni()}</span></span></h3>
+      <div class="kalan-sure"><p>${k.toplam < 0.5 ? "<span>🎉 Platformu bitirdin</span>"
+        : `<span>Toplam kalan</span><b>${SURE.yazi(k.toplam)}</b>`}</p>
+        ${KAPSAM ? `<p class="kalan-ara"><span>Ara sınav kapsamı için kalan</span><b>${SURE.yazi(araSinavKalanDk())}</b></p>` : ""}</div>
+      <div class="ilerleme-liste">${uniteler}</div></div>
     <div class="kart"><h3>SE 422 · Introduction to Data Science</h3>
       <p>${UNITELER.length} slayt destesi · ${UNITELER.reduce((t, u) => t + u.slaytSayisi, 0)} slayt</p>
       <p>${DERSLER.length} ders · ${Object.keys(OGELER).length} soru · ${Object.keys(OGELER).filter((id) => OGELER[id].adim.tip === "kod").length} kod alıştırması + final sınavı</p>
@@ -518,9 +688,13 @@ function sagPanelCiz() {
 }
 
 function yenile() {
+  if (sayfa !== "arasinav") document.title = "SE 422 Python";
+  if (!["arasinav", "ogren"].includes(sayfa) && typeof asGeriSayimDurdur === "function") asGeriSayimDurdur();
   menuCiz();
   sagPanelCiz();
-  ({ ogren: yolCiz, pekistir: pekistirCiz, barem: baremCiz, notlar: notlarCiz, claude: claudeCiz, sinav: sinavSayfasiCiz })[sayfa]();
+  ({ ogren: yolCiz, pekistir: pekistirCiz, barem: baremCiz, notlar: notlarCiz, claude: claudeCiz, sinav: sinavSayfasiCiz,
+    arasinav: () => (typeof araSinavSayfasiCiz === "function" ? araSinavSayfasiCiz() : null),
+    "ilerleme-yardim": () => (typeof yardimCiz === "function" ? yardimCiz() : null) })[sayfa]();
 }
 
 function git(hedef) {
@@ -537,23 +711,45 @@ function git(hedef) {
 // ============================================================
 const KAYMA = [0, -56, -84, -56, 0, 56, 84, 56];
 
+// Öğren sayfası: "Bu ekran nasıl çalışır?" kutusu (geri sayım ve kutu stilleri Gökçen Tombul Sınav ile ortak)
+const OGREN_ACIKLAMA = `
+  <details class="kart as-aciklama" id="og-aciklama">
+    <summary>Bu ekran nasıl çalışır?</summary>
+    <ul class="as-maddeler">
+      <li><span class="ikon">🗺️</span><span><b>Yol sırayla ilerler:</b> Her bölüm slaytlardan derlenmiş kısa derslere ayrılır; bir dersi bitirince sıradaki açılır. Slayt dışı ve isteğe bağlı dersler sırayı bekletmez.</span></li>
+      <li><span class="ikon">📖</span><span><b>Önce anlatım, sonra soru:</b> Anlatım kartları slaytı sayfa numarasıyla özetler, ardından o konunun soruları gelir. Yanlış yaptığında benzer bir soru tekrar sorulur.</span></li>
+      <li><span class="ikon">💻</span><span><b>Kodu kendin çalıştır:</b> Kod örneklerindeki "▶ Terminalde dene" düğmesi kodu terminale yükler; değiştirip sonucunu görebilirsin.</span></li>
+      <li><span class="ikon">📝</span><span><b>Not al, sonra indir:</b> Her anlatım kartında "📝 Not al" var; notlar bölüm ve slayta bağlanır, Notlar sayfasından PDF olarak indirilir.</span></li>
+      <li><span class="ikon">🎯</span><span><b>Sınava odaklan:</b> "Sadece ara sınav konuları" filtresi kapsam dışı dersleri gizler; zorlandığın konular Pekiştir'e düşer.</span></li>
+    </ul>
+    <p class="as-sinir">⚠️ Anlatımlar slaytlardan derlenmiştir. "Slayt dışı" etiketli bölümler slayta dayanmaz, Claude özetleri yapay zekâ ile üretildi; ikisini de slayt ve Moodle materyaliyle karşılaştır.</p>
+    <div class="as-oneri"><b>Önerilen kullanım</b>
+      <ol>
+        <li>"Sadece ara sınav konuları" filtresini aç, sıradaki dersten devam et.</li>
+        <li>Bir bölümü bitirince Claude özetini oku, zorlandığın konuları Pekiştir'de çalış.</li>
+        <li class="as-oneri-3">Sınavdan 1–2 gün önce ${MOD_ADI} ile deneme çöz, zayıf çıkan derslere dön. <span class="as-simdi">Şimdi tam zamanı</span></li>
+      </ol></div>
+  </details>`;
+
 function yolCiz() {
-  const aktif = aktifDugumIndeksi();
+  const aktif = sinavFiltresi() ? yolAktifIndeksi() : aktifDugumIndeksi();
   const k = kalanSure();
   let html = "";
   let sira = 0;
-  UNITELER.forEach((u, ui) => {
+  UNITELER.forEach((u) => {
+    if (sinavFiltresi() && kapsamBolum(u) === "disi") return;
     const bitti = k.bolumler[u.id] < 0.5;
-    html += `<section style="${renkStil(u.renk)}">
+    html += `<section id="bolum-${u.id}" style="${renkStil(u.renk)}">
       <div class="unite-baslik">
-        <div><div class="ust-yazi">Bölüm ${ui + 1} · ${u.slaytSayisi} slayt ${bitti ? `<span class="sure-ipucu">✓ tamamlandı</span>` : sureEtiketiHtml(u)}</div>
+        <div><div class="ust-yazi">Bölüm ${uniteNo(u)} · ${u.slaytSayisi ? `${u.slaytSayisi} slayt` : "slayt dışı"} ${bitti ? `<span class="sure-ipucu">✓ tamamlandı</span>` : sureEtiketiHtml(u)} ${kapsamRozet(kapsamBolum(u), kapsamNotu(u))}</div>
           <h2>${kacis(u.baslik)}</h2><div class="alt-yazi">${kacis(u.altBaslik)}</div>
+          ${u.uyari ? `<div class="unite-uyari">⚠️ ${kacis(u.uyari)}</div>` : ""}
           ${OZETLER[u.id] ? `<button class="claude-baglanti" data-claude="${u.id}">Bu bölümün Claude özeti →</button>` : ""}</div>
         <div class="unite-btnlar"><button class="dbtn" data-notlar="${u.id}">📖 Notlar</button>${uniteBelgeBtnlari(u)}</div>
       </div><div class="dugumler">`;
     sira = 0;
     DUGUMLER.forEach((d, i) => {
-      if (d.unite !== u) return;
+      if (d.unite !== u || yolGizli(d)) return;
       html += dugumHtml(d, i, aktif, KAYMA[sira++ % KAYMA.length]);
     });
     html += `</div></section>`;
@@ -561,12 +757,17 @@ function yolCiz() {
   const sinavIndeksi = DUGUMLER.length - 1;
   html += `<section style="${renkStil("altin")}"><div class="dugumler">${dugumHtml(DUGUMLER[sinavIndeksi], sinavIndeksi, aktif, 0)}</div></section>`;
   // Tam kitapçık bandı yalnızca tüm bölümler bitince (öncesinde not PDF'leri Notlarım panelinde ve Notlar sayfasında)
-  const kitapcik = aktif === -1
+  const kitapcik = aktifDugumIndeksi() === -1
     ? `<div class="kitapcik-bandi tam"><span class="ikon">📘</span><div><b>Tüm bölümleri tamamladın! Notlarını kitapçık olarak indir.</b>
         <div class="sure-alt">Kapak, içindekiler, bölüm bölüm notların ve sayfa numaralarıyla tek PDF.</div></div>
         <button class="dbtn yesil" data-kitapcik>📘 Tüm notlarım – kitapçık</button></div>`
     : "";
-  $("#sayfa").innerHTML = `<div class="yol">${kitapcik}${dikkatBandi()}${html}</div>`;
+  const sayac = typeof asGeriSayimHtml === "function" ? asGeriSayimHtml() : "";
+  $("#sayfa").innerHTML = `<div class="yol">${sayac}${OGREN_ACIKLAMA}${sinavFiltresiHtml()}${kitapcik}${dikkatBandi()}${html}</div>`;
+  const aciklama = $("#og-aciklama");
+  aciklama.open = !durum.ogrenAciklamaKapali;
+  aciklama.addEventListener("toggle", () => { durum.ogrenAciklamaKapali = !aciklama.open; kaydet(); });
+  if (sayac) asGeriSayimBaslat();
   const aktifEl = $(".dugum.aktif");
   if (aktifEl && !yolCiz.kaydirildi) {
     yolCiz.kaydirildi = true;
@@ -577,7 +778,7 @@ function yolCiz() {
 function dugumHtml(d, i, aktif, kayma) {
   const tamam = d.tip === "sinav" ? durum.sinavlar.some((s) => s.gecti) : !!durum.tamamlanan[d.id];
   const buAktif = d.tip === "sinav" ? aktif === -1 && !tamam : i === aktif;
-  const kilitli = d.tip === "sinav" ? aktif !== -1 : aktif !== -1 && i > aktif;
+  const kilitli = d.tip === "sinav" ? aktif !== -1 : aktif !== -1 && i > aktif && !istegeBagli(d);
   const usta = d.tip === "ders" && tamam && dersUstaMi(d.ders);
   let ikon = "⭐";
   if (d.tip === "tekrar") ikon = "🏆";
@@ -588,7 +789,7 @@ function dugumHtml(d, i, aktif, kayma) {
   const etiket = d.tip === "ders" ? d.ders.baslik : d.tip === "tekrar" ? "Bölüm tekrarı" : "Final sınavı";
   const sinif = ["dugum", kilitli ? "kilitli" : "", usta ? "usta" : "", buAktif ? "aktif" : "", d.tip !== "ders" ? "buyuk" : ""].join(" ");
   // Açılır kart, kaydırılmış düğüm kabının dışında ve sayfa akışında durur; alttaki düğümleri aşağı iter, üstlerine binmez
-  return `<div class="dugum-kap" style="transform:translateX(${kayma}px)">
+  return `<div class="dugum-kap${d.tip === "ders" && dersSinavDisi(d.unite, d.ders) ? " kapsam-disi" : ""}" style="transform:translateX(${kayma}px)">
     ${buAktif && acikDugum !== d.id ? `<div class="basla-balon">${tamam ? "Tekrar" : d.tip === "sinav" ? "Sınav" : "Başla"}</div>` : ""}
     <button class="${sinif}" data-dugum="${d.id}" aria-label="${kacis(etiket)}">${ikon}</button>
     <div class="dugum-etiket">${kacis(etiket)}</div>
@@ -659,20 +860,29 @@ function uniteBelgeBtnlari(u, acik = false) {
 function anlatimHtml(adim, dersRenk) {
   const cizim = adim.cizim ? CIZIM[adim.cizim] : "";
   return `<div class="anlatim" style="${dersRenk ? renkStil(dersRenk) : ""}"${baglamAttr(adim)}>
-    <div class="anlatim-ust"><span class="etiket">${slaytYazisi(adim.slayt)}</span><button class="not-al-btn" data-not-al title="Bu slayta not al">📝 Not al</button></div>
+    <div class="anlatim-ust"><span class="etiket">${kacis(kartEtiketi(adim))}</span>${kartKapsamRozet(adim)}<button class="not-al-btn" data-not-al title="Bu slayta not al">📝 Not al</button></div>
     <h2>${kacis(adim.baslik)}</h2>${adim.metin}${cizim}${adim.kod ? kodKutusu(adim.kod) : ""}</div>`;
 }
 
+// NOTLAR sayfası iki görünüm: "Notlarım" ağacı (static/notlar.js → notAgaciCiz) ve ders anlatım kartları listesi
+function notlarGorunumSecici(g) {
+  return `<div class="nagac-gorunum" role="group" aria-label="Görünüm">
+    <button class="${g === "agac" ? "aktif" : ""}" data-not-gorunum="agac" aria-pressed="${g === "agac"}">🌳 Notlarım</button>
+    <button class="${g === "anlatim" ? "aktif" : ""}" data-not-gorunum="anlatim" aria-pressed="${g === "anlatim"}">📚 Ders anlatımları</button></div>`;
+}
 function notlarCiz() {
-  const html = UNITELER.map((u, ui) => `
+  if (notlarCiz.hedef && typeof notAgaciDurum === "function") notAgaciDurum({ gorunum: "anlatim" });
+  if (typeof notAgaciCiz === "function" && notAgaciDurum().gorunum !== "anlatim") { notAgaciCiz(); return; }
+  const html = UNITELER.filter((u) => !(sinavFiltresi() && kapsamBolum(u) === "disi")).map((u) => `
     <section class="not-unite" id="not-${u.id}" style="${renkStil(u.renk)}">
-      <h2><span class="renk"></span>Bölüm ${ui + 1}: ${kacis(u.baslik)}</h2><p class="sayfa-aciklama">${kacis(u.kaynak)} · ${u.slaytSayisi} slayt · ${kacis(u.altBaslik)}</p>
+      <h2><span class="renk"></span>Bölüm ${uniteNo(u)}: ${kacis(u.baslik)} ${kapsamRozet(kapsamBolum(u), kapsamNotu(u))}</h2><p class="sayfa-aciklama">${kacis(u.kaynak)} · ${u.slaytSayisi} slayt · ${kacis(u.altBaslik)}</p>
+      ${u.uyari ? `<p class="unite-uyari koyu">⚠️ ${kacis(u.uyari)}</p>` : ""}
       <div class="btn-satir not-unite-btn">${uniteBelgeBtnlari(u, true)}</div>
-      ${u.dersler.map((d) => `<div class="not-ders"><h3>${kacis(d.baslik)}</h3>
-        ${d.adimlar.filter((a) => a.tip === "ogren").map((a) => `<div class="kart not-kart">${anlatimHtml(a, u.renk)}</div>`).join("")}
+      ${u.dersler.filter((d) => !(sinavFiltresi() && dersSinavDisi(u, d))).map((d) => `<div class="not-ders"><h3>${kacis(d.baslik)}</h3>
+        ${d.adimlar.filter((a) => a.tip === "ogren" && !(sinavFiltresi() && kapsamSlayt(a) === "disi")).map((a) => `<div class="kart not-kart${kartKapsamSinifi(a)}">${anlatimHtml(a, u.renk)}</div>`).join("")}
       </div>`).join("")}
     </section>`).join("");
-  $("#sayfa").innerHTML = `<div class="sayfa"><h1 class="sayfa-baslik">Ders notları</h1>
+  $("#sayfa").innerHTML = `<div class="sayfa">${notlarGorunumSecici("anlatim")}${sinavFiltresiHtml()}<h1 class="sayfa-baslik">Ders notları</h1>
     <p class="sayfa-aciklama">Derslerdeki tüm anlatım kartları, slayt sırasıyla. Takıldığın yere dönüp tekrar okuyabilirsin. Kartlardaki "📝 Not al" ile kendi notlarını ekle.</p>
     <div class="btn-satir not-unite-btn"><button class="dbtn beyaz kucuk" data-not-panel>📝 Notlarım</button><button class="dbtn beyaz kucuk" data-kitapcik>📘 Notlarım – kitapçık (PDF)</button></div>${html}</div>`;
   if (notlarCiz.hedef) {
@@ -841,7 +1051,7 @@ async function uniteTekrariBaslat(uniteId) {
 async function pekistirBaslat(dersIdler) {
   let konular = dersIdler && dersIdler.length ? dersIdler : dikkatKonulari().map((k) => k.konu).slice(0, 6);
   if (!konular.length) {
-    konular = DERSLER.filter(({ ders }) => durum.tamamlanan[ders.id]).map(({ ders }) => ders.id)
+    konular = DERSLER.filter(({ ders, unite }) => durum.tamamlanan[ders.id] && (!sinavFiltresi() || !dersSinavDisi(unite, ders))).map(({ ders }) => ders.id)
       .sort((a, b) => (konuPuani(a) ?? 100) - (konuPuani(b) ?? 100)).slice(0, 6);
   }
   if (!konular.length) { alert("Pekiştirilecek konu yok. Önce bir ders tamamla."); return; }
@@ -1252,7 +1462,7 @@ const OLUSTURUCULAR = {
     return {
       tip: "ogren", adim,
       html: `<div class="konusma">${maskot("normal", 84)}<div class="balon">${kacis(adim.baslik)}</div></div>
-        <div class="anlatim"${baglamAttr(adim)}><div class="anlatim-ust"><span class="etiket">${slaytYazisi(adim.slayt)}</span><button class="not-al-btn" data-not-al title="Bu slayta not al">📝 Not al</button></div>${adim.metin}${adim.cizim ? CIZIM[adim.cizim] : ""}${adim.kod ? kodKutusu(adim.kod) : ""}</div>`,
+        <div class="anlatim${kartKapsamSinifi(adim)}"${baglamAttr(adim)}><div class="anlatim-ust"><span class="etiket">${kacis(kartEtiketi(adim))}</span>${kartKapsamRozet(adim)}<button class="not-al-btn" data-not-al title="Bu slayta not al">📝 Not al</button></div>${adim.metin}${adim.cizim ? CIZIM[adim.cizim] : ""}${adim.kod ? kodKutusu(adim.kod) : ""}</div>`,
       hazir: () => true,
     };
   },
@@ -1583,6 +1793,85 @@ const OLUSTURUCULAR = {
     return ctl;
   },
 
+  // Ara sınav formatı: yazarak doldurulan 1–3 boşluk (kod ya da cümle). Değerlendirme: static/degerlendir.js
+  boslukyaz(adim, sinavModu) {
+    const parcalar = adim.metin.split("___");
+    const genislik = (i) => Math.max(8, ...adim.bosluklar[i].map((c) => c.length)) + 2;
+    const girdi = (i) => `<input class="bosluk-girdi byaz-girdi" data-b="${i}" autocomplete="off" spellcheck="false" autocapitalize="off"
+      style="width:${genislik(i)}ch" aria-label="Boşluk ${i + 1}">`;
+    const govde = adim.kod
+      ? `<pre class="kod-blok soru-kod tamamla-kod">${parcalar.map((x, i) => renklendir(x) + (i < parcalar.length - 1 ? girdi(i) : "")).join("")}</pre>`
+      : `<p class="bosluk-cumle">${parcalar.map((x, i) => kacis(x) + (i < parcalar.length - 1 ? girdi(i) : "")).join("")}</p>`;
+    const ctl = {
+      tip: "boslukyaz", adim,
+      html: `<h1 class="soru-baslik">${kacis(adim.soru)}</h1>
+        ${adim.hedef !== undefined ? `<div class="hedef"><div class="hedef-b">Hedef çıktı</div><pre>${kacis(adim.hedef)}</pre></div>` : ""}${govde}`,
+      baglan(kok, degisti) {
+        ctl.girdiler = [...kok.querySelectorAll(".byaz-girdi")];
+        ctl.girdiler.forEach((g) => g.addEventListener("input", degisti));
+      },
+      hazir: () => ctl.girdiler.every((g) => g.value.trim() !== ""),
+      bosMu: () => ctl.girdiler.every((g) => g.value.trim() === ""),
+      kontrol: async () => {
+        ctl.sonuc = DEGERLENDIR.bosluk(adim, ctl.girdiler.map((g) => g.value));
+        return { dogru: ctl.sonuc.dogru, puan: ctl.sonuc.puan, cevap: ctl.dogruCevap(), aciklama: adim.aciklama };
+      },
+      kilitle() {
+        ctl.girdiler.forEach((g, i) => {
+          g.disabled = true;
+          if (sinavModu || !ctl.sonuc) return;
+          g.classList.add(ctl.sonuc.dogrular[i] ? "dogru" : "yanlis");
+          if (!ctl.sonuc.dogrular[i]) g.title = "Doğrusu: " + adim.bosluklar[i][0];
+        });
+      },
+      dogruCevap: () => adim.bosluklar.map((b) => b[0]).join(" · "),
+      verilen: () => ctl.girdiler.map((g) => g.value.trim() || "—").join(" · "),
+    };
+    return ctl;
+  },
+
+  // Ara sınav formatı: tablo tamamlama; hücre bazında puanlanır
+  tablo(adim, sinavModu) {
+    let n = 0;
+    const basliklar = (b) => `<thead><tr>${b.map((x) => `<th>${kacis(x)}</th>`).join("")}</tr></thead>`;
+    const hucre = (h) => (h && typeof h === "object"
+      ? `<td class="bos-hucre"><input class="tablo-girdi" data-h="${n++}" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Boş hücre ${n}"><span class="hucre-dogru"></span></td>`
+      : `<td>${kacis(h)}</td>`);
+    const girdiTablosu = adim.girdi ? `<div class="tablo-etiket">Girdi: df</div><div class="tablo-kap"><table class="soru-tablo girdi">${basliklar(adim.girdi.basliklar)}
+      <tbody>${adim.girdi.satirlar.map((s) => `<tr>${s.map((x) => `<td>${kacis(x)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : "";
+    const ctl = {
+      tip: "tablo", adim,
+      html: `<h1 class="soru-baslik">${kacis(adim.soru)}</h1>${adim.kod ? kodKutusu(adim.kod, false) : ""}${girdiTablosu}
+        ${adim.girdi ? `<div class="tablo-etiket">Sonuç</div>` : ""}<div class="tablo-kap"><table class="soru-tablo">${basliklar(adim.basliklar)}
+        <tbody>${adim.satirlar.map((s) => `<tr>${s.map(hucre).join("")}</tr>`).join("")}</tbody></table></div>
+        <p class="ipucu-satir">Her boş hücre ayrı puanlanır.</p>`,
+      baglan(kok, degisti) {
+        ctl.girdiler = [...kok.querySelectorAll(".tablo-girdi")];
+        ctl.girdiler.forEach((g) => g.addEventListener("input", degisti));
+      },
+      hazir: () => ctl.girdiler.every((g) => g.value.trim() !== ""),
+      bosMu: () => ctl.girdiler.every((g) => g.value.trim() === ""),
+      kontrol: async () => {
+        ctl.sonuc = DEGERLENDIR.tablo(adim, ctl.girdiler.map((g) => g.value));
+        const d = ctl.sonuc.dogrular.filter(Boolean).length;
+        return { dogru: ctl.sonuc.dogru, puan: ctl.sonuc.puan, cevap: ctl.dogruCevap(), ozet: `${d}/${ctl.sonuc.toplam} hücre doğru.`, aciklama: adim.aciklama };
+      },
+      kilitle() {
+        const bos = DEGERLENDIR.bosHucreler(adim);
+        ctl.girdiler.forEach((g, i) => {
+          g.disabled = true;
+          if (sinavModu || !ctl.sonuc) return;
+          const td = g.closest("td");
+          td.classList.add(ctl.sonuc.dogrular[i] ? "dogru" : "yanlis");
+          if (!ctl.sonuc.dogrular[i]) td.querySelector(".hucre-dogru").textContent = "→ " + bos[i].hucre.cevaplar[0];
+        });
+      },
+      dogruCevap: () => DEGERLENDIR.bosHucreler(adim).map((x) => x.hucre.cevaplar[0]).join(" · "),
+      verilen: () => ctl.girdiler.map((g) => g.value.trim() || "—").join(" · "),
+    };
+    return ctl;
+  },
+
   kod(adim) {
     const a = ALISTIRMALAR[adim.alistirma];
     if (!a) {
@@ -1872,6 +2161,16 @@ document.addEventListener("click", (e) => {
     return;
   }
   $$(".sure-ipucu.acik").forEach((x) => x.classList.remove("acik"));
+  if (el("[data-ilerleme-disa]")) { ilerlemeDisaAktar(); return; }
+  if (el("[data-ilerleme-ice]")) { $("#ilerleme-dosya")?.click(); return; }
+  if (el("[data-sinav-filtre]")) { durum.sadeceAraSinav = !durum.sadeceAraSinav; kaydet(); yenile(); return; }
+  if (el("[data-unite-git]")) {
+    const id = el("[data-unite-git]").dataset.uniteGit;
+    yolCiz.kaydirildi = true; // aktif düğüme otomatik kaydırma, seçilen bölümün önüne geçmesin
+    if (sayfa !== "ogren") git("ogren");
+    $(`#bolum-${id}`)?.scrollIntoView({ block: "start" });
+    return;
+  }
   if (el("[data-claude]")) {
     claudeSecili = el("[data-claude]").dataset.claude;
     if (sayfa === "claude") { claudeCiz(); $("#claude-icerik")?.scrollIntoView({ block: "start" }); } else git("claude");
@@ -1919,6 +2218,23 @@ document.addEventListener("keydown", (e) => {
 // ============================================================
 temaUygula();
 yenile();
+// Bu tarayıcının kaydını sunucu kopyasıyla birleştir (başka adres/tarayıcıdaki ilerleme de gelsin)
+KAYIT.esitle(durum, yerelKaydet, () => { temaUygula(); if (!oturum) yenile(); }).then(() => {
+  if (sayfa === "barem" && !oturum) baremCiz();
+  // Eski adres: ilerleme sunucuya kopyalandıysa standart adrese yönlendiren bant
+  if (ESKI_ADRES && !KAYIT.sunucu.hata) {
+    const bant = Object.assign(document.createElement("div"), { className: "adres-bandi", role: "status" });
+    bant.innerHTML = `<span>İlerlemen kopyalandı. Bundan sonra hep <a href="${STANDART_ADRES}/${location.hash}">${STANDART_ADRES}</a> adresini kullan
+      (localhost ile 127.0.0.1 farklı sayılır).</span><button aria-label="Kapat">✕</button>`;
+    bant.querySelector("button").addEventListener("click", () => bant.remove());
+    document.body.appendChild(bant);
+  }
+});
+// Ara sınav kapsam haritası (rozetler, filtre, kalan süre)
+fetch("/static/sinav-kapsam.json")
+  .then((r) => (r.ok ? r.json() : null))
+  .then((j) => { if (j) { KAPSAM = j; if (!oturum) yenile(); } })
+  .catch(() => { /* kapsam dosyası yoksa rozet gösterilmez */ });
 // Claude'un özetleri listesi (bölüm başlıklarındaki "Bu bölümün Claude özeti →" bağlantısı ve sekme için)
 api("/api/ozetler")
   .then((j) => {

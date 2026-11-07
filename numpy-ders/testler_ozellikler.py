@@ -262,7 +262,7 @@ def ozet_testleri():
     import ozet_pdf_uret as O
     r = subprocess.run(["node", "-e", "const fs=require('fs');const h=fs.readFileSync(process.argv[1]+'/static/index.html','utf8');"
                         "const d=[...h.matchAll(/src=\"\\/static\\/mufredat\\/([^\"]+)\"/g)].map(m=>process.argv[1]+'/static/mufredat/'+m[1]);"
-                        "eval(d.map(f=>fs.readFileSync(f,'utf8')).join('\\n')+';process.stdout.write(JSON.stringify(UNITELER.map(u=>u.id)))')", str(KLASOR)],
+                        "eval(d.map(f=>fs.readFileSync(f,'utf8')).join('\\n')+';process.stdout.write(JSON.stringify(UNITELER.filter(u=>u.no===undefined).map(u=>u.id)))')", str(KLASOR)],
                        capture_output=True, text=True)
     unite_idleri = json.loads(r.stdout)
     dosyalar = O.ozet_dosyalari()
@@ -276,7 +276,7 @@ def ozet_testleri():
                 f"Özet: {dosya.name} sırası/ünitesi müfredatla uyuşmuyor ({bilgi.get('unite')})")
         eksik = [b for b in BOLUMLER if b not in govde]
         kontrol(not eksik, f"Özet: {dosya.name} eksik bölümler {eksik}")
-        kontrol(re.search(r"\(Slayt \d", govde), f"Özet: {dosya.name} slayt numarası içermiyor")
+        kontrol(re.search(r"\((Slayt|Task) \d", govde), f"Özet: {dosya.name} slayt numarası içermiyor")
         for ek in re.findall(r"^> \*\*Ek bilgi.*$", govde, re.M):
             kontrol("Kaynak:" in ek, f"Özet: {dosya.name} kaynaksız ek bilgi: {ek[:60]}")
         # Kod çıktıları gerçek çalıştırmayla aynı mı (dosyaya yazmadan)
@@ -303,10 +303,11 @@ def claude_sekmesi_testleri():
     sunucu, url = _sunucu_baslat()
     try:
         liste, _ = _istek(url + "/api/ozetler")
-        kontrol(len(liste["ozetler"]) == 15 and liste["birlesik"], f"Claude: özet listesi eksik {len(liste['ozetler'])}")
+        beklenen = len(list((KLASOR / "ozetler").glob("*.md")))
+        kontrol(len(liste["ozetler"]) == beklenen and liste["birlesik"], f"Claude: özet listesi eksik {len(liste['ozetler'])}")
         kontrol(all(o["pdf"] and o["unite"] for o in liste["ozetler"]), "Claude: her özetin PDF'i ve ünitesi olmalı")
         ozet, _ = _istek(url + "/api/ozetler/" + liste["ozetler"][-1]["ad"])
-        kontrol(ozet["md"].startswith("# Bölüm 15") and "unite:" not in ozet["md"][:200], "Claude: özet ön bölümsüz Markdown dönmeli")
+        kontrol(ozet["md"].startswith("# Bölüm ") and "unite:" not in ozet["md"][:200], "Claude: özet ön bölümsüz Markdown dönmeli")
         for kotu in ["../app", "%2e%2e%2fapp", "yok"]:
             try:
                 _istek(url + "/api/ozetler/" + kotu)
@@ -324,7 +325,182 @@ def claude_sekmesi_testleri():
     print("Claude'un notları: özet listesi/içerik API'si, yol dışı ad koruması ve Markdown render'ı (tablo, kod, çıktı, ek bilgi) test edildi")
 
 
-TESTLER = [sure_testleri, terminal_testleri, not_testleri, pdf_testleri, ozet_testleri, claude_sekmesi_testleri]
+# ============================ Ara sınav ============================
+
+def kapsam_testleri():
+    """static/sinav-kapsam.json müfredatla tutarlı mı; SINAV_KAPSAM.md güncel mi?"""
+    betik = r"""
+const fs = require('fs'); const h = fs.readFileSync(process.argv[1] + '/static/index.html', 'utf8');
+const d = [...h.matchAll(/src="\/static\/mufredat\/([^"]+)"/g)].map(m => process.argv[1] + '/static/mufredat/' + m[1]);
+eval(d.map(f => fs.readFileSync(f, 'utf8')).join('\n') + ';globalThis.U = UNITELER');
+process.stdout.write(JSON.stringify(U.map(u => ({ id: u.id, no: u.no, dersler: u.dersler.map(x => ({ id: x.id, slayt: x.slayt || null })) }))));"""
+    r = subprocess.run(["node", "-e", betik, str(KLASOR)], capture_output=True, text=True, check=True)
+    uniteler = json.loads(r.stdout)
+    K = json.loads((KLASOR / "static" / "sinav-kapsam.json").read_text(encoding="utf-8"))
+    gecerli = {"ici", "disi", "belirsiz"}
+    for u in uniteler:
+        ku = K["uniteler"].get(u["id"])
+        kontrol(ku is not None, f"Kapsam: {u['id']} eşlenmemiş")
+        if not ku:
+            continue
+        kontrol(ku["kapsam"] in gecerli and ku["baslik"] in K["basliklar"], f"Kapsam: {u['id']} geçersiz kapsam/başlık")
+        dersler = {d["id"]: d for d in u["dersler"]}
+        for did, kd in (ku.get("dersler") or {}).items():
+            kontrol(did in dersler, f"Kapsam: {u['id']} içinde olmayan ders {did}")
+            kontrol(kd.get("kapsam", "ici") in gecerli, f"Kapsam: {did} geçersiz kapsam")
+            s = dersler.get(did, {}).get("slayt") or []
+            for n, ks in (kd.get("slaytlar") or {}).items():
+                kontrol(s and s[0] <= int(n) <= s[-1] and ks["kapsam"] in gecerli, f"Kapsam: {did} slayt {n} ders aralığında değil")
+    kontrol(len({u["id"] for u in uniteler}) == len(K["uniteler"]), "Kapsam: JSON'da müfredatta olmayan bölüm var")
+    sifir = [u["id"] for u in uniteler if u.get("no") == 0]
+    kontrol(sifir == ["u-vb"], f"Kapsam: slayt dışı 'Veri bilimi' bölümü 0 numaralı olmalı {sifir}")
+    r = subprocess.run([sys.executable, str(KLASOR / "kapsam_raporu.py"), "--kontrol"], capture_output=True, text=True)
+    kontrol(r.returncode == 0, "Kapsam: SINAV_KAPSAM.md güncel değil (python3 kapsam_raporu.py)")
+    print(f"Kapsam haritası: {len(uniteler)} bölüm eşlendi, ders/slayt istisnaları müfredatla tutarlı, SINAV_KAPSAM.md güncel")
+
+
+def degerlendirme_testleri():
+    """Boşluk doldurma toleransları ve tablo hücre puanlaması (static/degerlendir.js)."""
+    betik = r"""
+const D = require(process.argv[1]);
+const kodB = { kod: true, metin: 'df.___(subset=[___])', bosluklar: [['drop_duplicates'], ["'ad'"]] };
+const cumle = { kod: false, metin: 'input() her zaman ___ döndürür; ___ hatası', bosluklar: [['str', 'string'], ['KeyError']] };
+const tablo = { satirlar: [['a', { cevaplar: ['3.0'], sayisal: true }, { cevaplar: ["'VERI'", 'VERI'], kod: true }], ['b', { cevaplar: ['Evet'] }, 'x']] };
+const sonuc = {
+  kodBosluk: D.bosluk(kodB, [' drop_duplicates ', '"ad"']).dogru,
+  kodBoslukParantez: D.esit('df.dropna( )', ['df.dropna()'], { kod: true }),
+  kodHarfDuyarli: D.bosluk(kodB, ['Drop_Duplicates', "'ad'"]).puan,
+  cumleHarfsiz: D.bosluk(cumle, ['STR.', 'keyerror']).dogru,
+  cumleAlternatif: D.bosluk(cumle, ['string', 'KeyError']).dogru,
+  cumleKismi: D.bosluk(cumle, ['str', 'IndexError']).puan,
+  bos: D.bosluk(cumle, ['', '  ']).puan,
+  tabloTam: D.tablo(tablo, ['3', 'VERI', 'evet']).puan,
+  tabloKismi: D.tablo(tablo, ['3', "'veri'", 'Evet']),
+  tabloBosSayisi: D.bosHucreler(tablo).length,
+  sayisalDegil: D.esit('3', ['3.0']),
+  tekKarakter: D.esit('!', ['!']),
+};
+process.stdout.write(JSON.stringify(sonuc));"""
+    r = subprocess.run(["node", "-e", betik, str(KLASOR / "static" / "degerlendir.js")], capture_output=True, text=True)
+    if r.returncode:
+        hata(f"Değerlendirme: node hatası {r.stderr[-300:]}")
+        return
+    s = json.loads(r.stdout)
+    kontrol(s["kodBosluk"] and s["kodBoslukParantez"], "Değerlendirme: kodda boşluk/tırnak toleransı çalışmıyor")
+    kontrol(s["kodHarfDuyarli"] == 0.5, "Değerlendirme: kod boşluğu büyük/küçük harfe duyarlı olmalı (Drop_Duplicates yanlış)")
+    kontrol(s["cumleHarfsiz"] and s["cumleAlternatif"], "Değerlendirme: cümle boşluğunda harf/nokta toleransı ya da alternatif cevap çalışmıyor")
+    kontrol(s["cumleKismi"] == 0.5 and s["bos"] == 0, "Değerlendirme: kısmi/boş puan hatalı")
+    kontrol(s["tabloTam"] == 1 and s["tabloBosSayisi"] == 3, "Değerlendirme: tablo tam puan/boş hücre sayısı hatalı")
+    kontrol(abs(s["tabloKismi"]["puan"] - 2 / 3) < 1e-9 and s["tabloKismi"]["dogrular"] == [True, False, True] and not s["tabloKismi"]["dogru"],
+            f"Değerlendirme: tablo hücre puanlaması hatalı {s['tabloKismi']}")
+    kontrol(not s["sayisalDegil"] and s["tekKarakter"], "Değerlendirme: sayısal olmayan hücrede 3 ≠ 3.0, '!' cevabı kabul edilmeli")
+    print("Değerlendirme: boşlukta harf/boşluk/tırnak/nokta toleransları, kodda harf duyarlılığı, tabloda hücre bazında kısmi puan test edildi")
+
+
+def ara_sinav_testleri():
+    """Her soru üreticisinin referans cevabı gerçek çalıştırmayla doğrulanır; API istenen sayıda soru döndürür."""
+    r = subprocess.run([sys.executable, str(KLASOR / "ara_sinav_kontrol.py")], capture_output=True, text=True, timeout=600)
+    kontrol(r.returncode == 0, "Ara sınav: kontrol betiği başarısız:\n" + r.stdout[-1500:] + r.stderr[-500:])
+    ozet = next((l for l in r.stdout.splitlines() if l.startswith("Ara sınav kontrolü")), "")
+    import ara_sinav_kontrol
+    konular = ara_sinav_kontrol.kapsam_ici_dersler()
+    sunucu, url = _sunucu_baslat()
+    try:
+        y, _ = _istek(url + "/api/ara-sinav", {"adet": 12, "agirliklar": {"1.1": 1, "1.2": 1, "1.3": 1, "1.4": 1, "1.5": 1}, "konular": konular})
+    finally:
+        sunucu.shutdown()
+    s = y.get("sorular", [])
+    kontrol(len(s) == 12 and {q["tip"] for q in s} == {"secmeli", "boslukyaz", "tablo"}, f"Ara sınav API: {len(s)} soru, tipler {[q['tip'] for q in s]}")
+    kontrol({q["baslik"] for q in s} == {"1.1", "1.2", "1.3", "1.4", "1.5"}, "Ara sınav API: her başlıktan soru olmalı")
+    kontrol(all(q["konu"] in konular for q in s), "Ara sınav API: kapsam dışı ders sorusu geldi")
+    print(f"Ara sınav: {ozet.replace('Ara sınav kontrolü: ', '')}; API 12 soruluk deneme üretti (3 tip, 5 başlık)")
+
+
+# ============================ İlerleme kaydı: göç ve birleştirme ============================
+
+GOC_BETIGI = r"""
+const fs = require("fs");
+const kok = process.argv[1];
+const html = fs.readFileSync(kok + "/static/index.html", "utf8");
+const dosyalar = [...html.matchAll(/src="\/static\/mufredat\/([^"]+)"/g)].map((m) => kok + "/static/mufredat/" + m[1]);
+eval(dosyalar.map((f) => fs.readFileSync(f, "utf8")).join("\n") + ";globalThis.UNITELER = UNITELER;");
+const KAYIT = require(kok + "/static/kayit.js");
+const U = globalThis.UNITELER;
+const ders = U.flatMap((u) => u.dersler).find((d) => d.adimlar.filter((a) => a.tip !== "ogren").length >= 2);
+const sorular = ders.adimlar.map((a, i) => [a, i]).filter(([a]) => a.tip !== "ogren").map(([, i]) => `${ders.id}#${i}`);
+// v1 kaydı: sürüm alanı ve yeni alanlar yok
+const v1 = { tamamlanan: { [ders.id]: true, "u-temel-tekrar": true, "eski-ders": true }, xp: 120, gunluk: { "2026-11-01": 40 },
+  ogeler: { [sorular[0]]: { kutu: 2, gorulme: 3, son: 5 } }, sinavlar: [{ tarih: 1, puan: 8, toplam: 10, gecti: true }],
+  konular: { [ders.id]: { d: 4, y: 1, son: [true], hatalar: [] } }, kodlar: { "dizi-olustur": "x = 1" }, tema: "koyu" };
+const g1 = KAYIT.gocEt(v1);
+// İkinci açılış: aynı kayıt tekrar göç etmemeli
+const g2 = KAYIT.gocEt(g1.veri);
+// ID eşlemesi: ders id'si değişirse tamamlanan, süre, barem ve soru kayıtları taşınır
+KAYIT.ID_ESLESME["eski-ders"] = ders.id + "-yeni";
+const g3 = KAYIT.gocEt({ schemaVersion: 2, tamamlanan: { "eski-ders": true }, ogeler: { "eski-ders#3": { kutu: 1, gorulme: 1, son: 1 } } });
+delete KAYIT.ID_ESLESME["eski-ders"];
+// Soru sırası kayması: kayıttaki imza başka bir sıradaki soruya aitse ustalık oraya taşınır
+const imzalar = KAYIT.soruImzalari(U);
+const kayan = KAYIT.gocEt({ schemaVersion: 2, ogeler: { [sorular[0]]: { kutu: 4, gorulme: 9, son: 9 }, [sorular[1]]: { kutu: 1, gorulme: 1, son: 1 } },
+  ogeImza: { [sorular[0]]: imzalar[sorular[1]], [sorular[1]]: imzalar[sorular[0]] } });
+// Yeni bölüm: bilinen listesinde olmayan bölüm boş ilerlemeyle eklenir
+const yeni = KAYIT.gocEt({ ...g1.veri, bilinenBolumler: g1.veri.bilinenBolumler.slice(0, -1) });
+console.log(JSON.stringify({ g1: g1.veri, g1degisti: g1.degisti, g1rapor: g1.rapor, g2degisti: g2.degisti, g3: g3.veri, ders: ders.id,
+  sorular, kayan: kayan.veri.ogeler, yeniBolumler: yeni.yeniBolumler, sonBolum: U.at(-1).id, bolumSayisi: U.length }));
+"""
+
+
+def ilerleme_testleri():
+    r = subprocess.run(["node", "-e", GOC_BETIGI, str(KLASOR)], capture_output=True, text=True)
+    if r.returncode != 0:
+        hata(f"İlerleme göçü: betik çalışmadı {r.stderr[-400:]}")
+        return
+    s = json.loads(r.stdout)
+    v, d, q = s["g1"], s["ders"], s["sorular"]
+    kontrol(v["schemaVersion"] == 2 and s["g1degisti"], "Göç: v1 kaydı v2'ye yükseltilmeli")
+    kontrol(v["tamamlanan"] == {d: True, "u-temel-tekrar": True, "eski-ders": True}, f"Göç: tamamlananlar korunmalı {v['tamamlanan']}")
+    kontrol(v["xp"] == 120 and v["gunluk"] == {"2026-11-01": 40} and len(v["sinavlar"]) == 1 and v["tema"] == "koyu",
+            "Göç: XP, seri, sınavlar ve ayarlar korunmalı")
+    kontrol(v["ogeler"][q[0]]["kutu"] == 2 and v["ogeImza"].get(q[0]), "Göç: soru ustalığı korunmalı ve imza eklenmeli")
+    kontrol(v["konular"][d]["d"] == 4 and v["kodlar"] == {"dizi-olustur": "x = 1"}, "Göç: barem ve kodlar korunmalı")
+    kontrol(v["araSinavlar"] == [] and len(v["bilinenBolumler"]) == s["bolumSayisi"], "Göç: yeni alanlar ve bölüm listesi eklenmeli")
+    kontrol(not s["g2degisti"], "Göç: güncel kayıt ikinci açılışta tekrar göç etmemeli")
+    kontrol(s["g3"]["tamamlanan"] == {d + "-yeni": True} and d + "-yeni#3" in s["g3"]["ogeler"], f"Göç: ID eşlemesi {s['g3']}")
+    kontrol(s["kayan"][q[1]]["kutu"] == 4 and s["kayan"][q[0]]["kutu"] == 1, f"Göç: kayan soru sırası imzayla eşlenmeli {s['kayan']}")
+    kontrol(s["yeniBolumler"] == [s["sonBolum"]], f"Göç: yeni bölüm algılanmalı {s['yeniBolumler']}")
+
+    import app
+    sunucu, url = _sunucu_baslat()
+    try:
+        kontrol(_istek(url + "/api/ilerleme")[0] == {"var": False, "ilerleme": None}, "İlerleme: başlangıçta sunucu kopyası boş olmalı")
+        a = {"schemaVersion": 2, "tamamlanan": {"x": True}, "xp": 50, "gunluk": {"g1": 10}, "ogeler": {"q": {"kutu": 2, "son": 10}},
+             "sinavlar": [{"tarih": 1, "puan": 5}], "oturumlar": [{"t": 1, "tur": "ders"}], "kodlar": {"k": "a"}, "tema": "acik",
+             "konular": {"x": {"d": 5, "y": 0, "t": 1}}}
+        b = {"schemaVersion": 2, "tamamlanan": {"y": True}, "xp": 30, "gunluk": {"g1": 4, "g2": 7}, "ogeler": {"q": {"kutu": 0, "son": 20}},
+             "sinavlar": [{"tarih": 2, "puan": 7}], "oturumlar": [{"t": 1, "tur": "ders"}, {"t": 2, "tur": "sinav"}], "tema": "koyu",
+             "konular": {"x": {"d": 1, "y": 0, "t": 9}}, "araSinavlar": [{"tarih": 3, "yuzde": 80}]}
+        _istek(url + "/api/ilerleme", {"ilerleme": a})
+        m = _istek(url + "/api/ilerleme", {"ilerleme": b, "geriDon": True})[0]["ilerleme"]
+        kontrol(m["tamamlanan"] == {"x": True, "y": True} and m["xp"] == 50 and m["gunluk"] == {"g1": 10, "g2": 7},
+                f"İlerleme: birleştirme tamamlananları/XP'yi kaybetmemeli {m}")
+        kontrol(m["ogeler"]["q"]["son"] == 20 and m["konular"]["x"]["d"] == 5 and m["tema"] == "koyu" and m["kodlar"] == {"k": "a"},
+                f"İlerleme: alan kuralları {m}")
+        kontrol(len(m["sinavlar"]) == 2 and len(m["oturumlar"]) == 2 and m["araSinavlar"] == [{"tarih": 3, "yuzde": 80}],
+                "İlerleme: sınav/deneme geçmişi birleşmeli")
+        kontrol(json.loads(app.ILERLEME_DOSYASI.read_text(encoding="utf-8"))["tamamlanan"] == {"x": True, "y": True},
+                "İlerleme: veri/ilerleme.json'a yazılmalı")
+        kontrol(list(app.YEDEKLER.glob("ilerleme-gunluk-*.json")), "İlerleme: günlük yedek alınmalı")
+        y = _istek(url + "/api/ilerleme/yedek", {"sebep": "goc-v1-v2", "tarih": "t", "ilerleme": {"xp": 1}})[0]
+        kontrol(y.get("tamam") and (app.VERI / y["dosya"]).exists() and "goc-v1-v2" in y["dosya"], f"İlerleme: göç yedeği yazılmalı {y}")
+        kontrol(not _istek(url + "/api/ilerleme", {"ilerleme": "bozuk"})[0]["tamam"], "İlerleme: geçersiz kayıt reddedilmeli")
+        kontrol(not list(app.VERI.rglob("*.tmp")), "İlerleme: geçici dosya artığı kaldı")
+    finally:
+        sunucu.shutdown()
+    print("İlerleme: v1→v2 göçü, ID eşlemesi, kayan soru sırası, yeni bölüm, sunucu birleştirmesi ve yedekler test edildi")
+
+
+TESTLER = [sure_testleri, terminal_testleri, not_testleri, pdf_testleri, ozet_testleri, claude_sekmesi_testleri,
+           kapsam_testleri, degerlendirme_testleri, ara_sinav_testleri, ilerleme_testleri]
 
 if __name__ == "__main__":
     # Notlar gerçek veri/ klasörüne değil geçici klasöre yazılsın (app import edilmeden önce)

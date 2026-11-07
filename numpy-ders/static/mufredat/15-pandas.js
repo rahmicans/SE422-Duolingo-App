@@ -398,6 +398,50 @@ UNITELER.push({
       ],
     },
     {
+      // Slayt dışı: ara sınav kapsamındaki "veri temizleme" için (duplicates, inconsistencies). Kaynak: pandas.pydata.org/docs
+      id: "pd-temizlik", baslik: "Veri temizleme: tekrarlar ve tutarsızlıklar", ekBilgi: true,
+      adimlar: [
+        O("Tekrarlı satırları bulmak: duplicated()", undefined, `
+          ${EK_BILGI("Bu ders ders slaytlarında yok; ara sınav kapsamındaki <b>veri temizleme</b> (tekrarlı satırlar, tutarsızlıklar) için pandas dokümantasyonundan eklendi. Moodle materyaliyle karşılaştır.")}
+          <p><code>df.duplicated()</code> her satır için, <b>kendisinden önce aynısı geçmişse True</b> olan bir boolean Series döndürür. İlk görülen satır False'tur.</p>
+          <ul><li><code>df.duplicated().sum()</code> → tekrarlı satır sayısı (True'lar 1 sayılır).</li>
+          <li><code>subset=['ad']</code> → yalnızca verilen sütunlara bakarak karşılaştırır.</li></ul>`,
+          { etiket: "Ek bilgi · pandas docs", kod: "df = pd.DataFrame({'ad': ['Ada', 'Can', 'Ada', 'Ece', 'Can'],\n                   'sehir': ['Ankara', 'İzmir', 'Ankara', 'Bursa', 'Bursa']})\nprint(df.duplicated().tolist())\nprint(df.duplicated().sum())\nprint(df.duplicated(subset=['ad']).tolist())" }),
+        O("Tekrarları silmek: drop_duplicates()", undefined, `
+          <p><code>df.drop_duplicates()</code> tekrarlı satırları siler ve <b>yeni bir DataFrame</b> döndürür (orijinal index etiketleri korunur).</p>
+          <ul><li><code>subset</code>: hangi sütunlara göre tekrar sayılacağı.</li>
+          <li><code>keep='first'</code> (varsayılan) ilk görüleni, <code>keep='last'</code> sonuncuyu tutar; <code>keep=False</code> tekrar eden <b>tüm</b> satırları siler.</li></ul>
+          <p>Kaynak: pandas.pydata.org/docs (DataFrame.duplicated, DataFrame.drop_duplicates)</p>`,
+          { etiket: "Ek bilgi · pandas docs", kod: "df = pd.DataFrame({'ad': ['Ada', 'Can', 'Ada', 'Ece', 'Can'],\n                   'sehir': ['Ankara', 'İzmir', 'Ankara', 'Bursa', 'Bursa']})\nprint(df.drop_duplicates())\nprint(df.drop_duplicates(subset=['ad'], keep='last'))\nprint(df.drop_duplicates(subset=['ad'], keep=False))" }),
+        O("Tutarsız kategorileri bulmak ve düzeltmek", undefined, `
+          <p>Aynı değer farklı yazılmış olabilir: <code>' Ankara'</code>, <code>'ankara'</code>, <code>'ANKARA '</code>. Önce <b>bul</b>, sonra <b>düzelt</b>:</p>
+          <ul><li><code>s.unique()</code> farklı değerleri, <code>s.value_counts()</code> her değerin kaç kez geçtiğini gösterir; tutarsızlıklar burada görünür.</li>
+          <li><code>s.str.strip()</code> baştaki/sondaki boşlukları, <code>s.str.lower()</code> büyük/küçük harf farkını giderir.</li>
+          <li><code>s.replace({'ist': 'istanbul'})</code> kısaltma ve yazım farklarını tek bir değere eşler.</li></ul>
+          <p><b>Dikkat (Türkçe veri):</b> Python'da <code>'İ'.lower()</code> sonucu <code>'i̇'</code> (i + birleşik nokta) olur; bu yüzden <code>'İzmir'.lower()</code>, <code>'izmir'</code> ile eşleşmez. Böyle durumlarda <code>replace</code> ile açıkça eşle.</p>`,
+          { etiket: "Ek bilgi · pandas docs", kod: "s = pd.Series([' Ankara', 'ankara', 'ANKARA ', 'Bursa', 'bursa', 'Ist'])\nprint(s.unique())\ntemiz = s.str.strip().str.lower().replace({'ist': 'istanbul'})\nprint(temiz.value_counts().to_dict())\nprint('İzmir'.lower() == 'izmir')" }),
+        O("Tip tutarsızlıkları: astype ve to_numeric", undefined, `
+          <p>Sayı olması gereken bir sütun string (<code>object</code>) olarak gelebilir; içinde <code>'yirmi'</code> gibi sayıya çevrilemeyen değerler de olabilir.</p>
+          <ul><li><code>s.astype(int)</code> tipi dönüştürür; çevrilemeyen bir değer varsa <b>hata verir</b>.</li>
+          <li><code>pd.to_numeric(s, errors='coerce')</code> çevrilemeyen değerleri <b>NaN</b> yapar; sonra eksik veri yöntemleriyle (dropna, fillna) ele alınır.</li>
+          <li>String sütunda <code>sum()</code> sayıları toplamaz, metinleri <b>birleştirir</b>: tip kontrolü (<code>df.dtypes</code>, <code>info()</code>) temizliğin ilk adımıdır.</li></ul>
+          <p>Kaynak: pandas.pydata.org/docs (pandas.to_numeric, DataFrame.astype)</p>`,
+          { etiket: "Ek bilgi · pandas docs", kod: "y = pd.Series(['25', '30', 'yirmi', '41', ''])\nsayi = pd.to_numeric(y, errors='coerce')\nprint(sayi.tolist())\nprint(sayi.isna().sum())\nprint(pd.Series(['1', '2', '3']).sum(), pd.Series(['1', '2', '3']).astype(int).sum())" }),
+        C("df = pd.DataFrame({'a': [1, 1, 2, 2], 'b': ['x', 'x', 'y', 'z']})\nprint(df.duplicated().sum())", ["1", "2", "0", "4"], "Yalnızca 1. satır, 0. satırın tamamen aynısıdır."),
+        C("df = pd.DataFrame({'a': [1, 1, 2, 2], 'b': ['x', 'x', 'y', 'z']})\nprint(df.duplicated(subset=['a']).sum())", ["2", "1", "0", "4"], "Yalnızca 'a' sütununa bakılır: 1. ve 3. satırlar tekrar."),
+        C("df = pd.DataFrame({'a': [1, 1, 2, 2], 'b': ['x', 'x', 'y', 'z']})\nprint(df.drop_duplicates(subset=['a'], keep='last').index.tolist())", ["[1, 3]", "[0, 2]", "[0, 1, 2, 3]", "[]"], "keep='last' her gruptaki son satırı tutar."),
+        C("df = pd.DataFrame({'a': [1, 1, 2]})\nprint(len(df.drop_duplicates(keep=False)))", ["1", "2", "3", "0"], "keep=False tekrar eden tüm satırları siler; yalnızca 2 kalır."),
+        C("s = pd.Series(['A ', 'a', ' a'])\nprint(s.str.strip().str.lower().nunique())", ["1", "3", "2", "0"], "strip + lower sonrası hepsi 'a' olur."),
+        Y("s = pd.Series(['10', 'on', '20'])\nprint(pd.to_numeric(s, errors='coerce').isna().sum())", "1", "'on' sayıya çevrilemez → NaN."),
+        C("print(pd.Series(['1', '2']).sum())", ["12", "3", "Hata verir", "['1', '2']"], "String sütunda sum metinleri birleştirir."),
+        C("print(pd.Series(['1', 'x']).astype(int).sum())", ["Hata verir", "1", "NaN", "0"], "astype çevrilemeyen değerde ValueError verir; to_numeric(errors='coerce') NaN yapar."),
+        S("Bir sütundaki tutarsız kategori yazımlarını görmenin en hızlı yolu hangisidir?", ["s.value_counts()", "s.sum()", "s.dropna()", "s.astype(int)"], "value_counts her farklı yazımı ve sayısını listeler."),
+        DY("df.duplicated() ilk görülen satır için de True döndürür.", false, "İlk görülen satır False'tur; yalnızca sonraki tekrarları True'dur."),
+        B("Çevrilemeyen değerleri NaN yap", "sayi = pd.___(s, errors='___')", ["to_numeric", "coerce"], ["to_numeric", "coerce", "astype", "ignore"], "errors='coerce' hatalı değerleri NaN yapar."),
+        E(["duplicated()", "tekrar mı? (boolean)"], ["drop_duplicates()", "tekrarları siler"], ["str.strip()", "uçtaki boşlukları siler"], ["value_counts()", "değer sıklıkları"]),
+      ],
+    },
+    {
       id: "pd-birlestir", baslik: "concat ve merge ile birleştirme", slayt: [45, 50],
       adimlar: [
         O("İki temel fonksiyon: concat ve merge", [45, 45], `

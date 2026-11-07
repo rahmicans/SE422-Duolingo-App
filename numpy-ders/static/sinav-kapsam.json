@@ -1,0 +1,143 @@
+{
+ "aciklama": "Ara sınav (Module 1) kapsam haritası. Tek kaynak: arayüz (rozet, filtre, süre) ve ara_sinav.py (deneme soruları) bunu okur. kapsam: ici | disi | belirsiz. Öncelik: slayt > ders > ünite. varsayilanAgirlik: slaytı olmayan başlıkların deneme sınavındaki varsayılan ağırlığı (%).",
+ "basliklar": {
+  "1.1": "What is Data Science",
+  "1.2": "Python Basics",
+  "1.3": "Python for Data Science",
+  "1.4": "Introduction to NumPy",
+  "1.5": "Data Manipulation with Pandas (Series, DataFrame, veri temizleme)",
+  "HW1": "Homework 1 (ödev kavramları)"
+ },
+ "uniteler": {
+  "u-vb": {
+   "baslik": "1.1",
+   "kapsam": "ici",
+   "not": "Ders slaytı yok; genel kabul gören içerik. Moodle materyaliyle karşılaştırılmalı."
+  },
+  "u-temel": {
+   "baslik": "1.2",
+   "kapsam": "ici"
+  },
+  "u-kontrol": {
+   "baslik": "1.2",
+   "kapsam": "ici"
+  },
+  "u-fonk": {
+   "baslik": "1.2",
+   "kapsam": "ici"
+  },
+  "u-dosya": {
+   "baslik": "1.2",
+   "kapsam": "ici"
+  },
+  "u-liste": {
+   "baslik": "1.2",
+   "kapsam": "ici",
+   "dersler": {
+    "liste-grafik": {
+     "kapsam": "belirsiz",
+     "not": "matplotlib grafikleri (slayt 35–57): Python Basics mi, Python for Data Science mi, yoksa kapsam dışı mı belirsiz."
+    }
+   }
+  },
+  "u-str": {
+   "baslik": "1.2",
+   "kapsam": "ici"
+  },
+  "u-sozluk": {
+   "baslik": "1.2",
+   "kapsam": "ici"
+  },
+  "u-sinif": {
+   "baslik": "1.2",
+   "kapsam": "ici"
+  },
+  "u-kalitim": {
+   "baslik": "1.2",
+   "kapsam": "ici"
+  },
+  "u-ozyineleme": {
+   "baslik": "1.2",
+   "kapsam": "ici"
+  },
+  "u-vt": {
+   "baslik": "1.2",
+   "kapsam": "belirsiz",
+   "not": "Veritabanı programlama (SQLite/SQL) duyurudaki 'Python Basics' başlığına girip girmediği belirsiz."
+  },
+  "u-ortam": {
+   "baslik": "1.3",
+   "kapsam": "ici"
+  },
+  "u-np1": {
+   "baslik": "1.4",
+   "kapsam": "ici"
+  },
+  "u-np2": {
+   "baslik": "1.4",
+   "kapsam": "ici"
+  },
+  "u-pd": {
+   "baslik": "1.5",
+   "kapsam": "ici",
+   "dersler": {
+    "pd-io": {
+     "kapsam": "disi",
+     "slaytlar": {
+      "21": {
+       "kapsam": "belirsiz",
+       "not": "read_csv parametreleri (na_values, usecols...) slaytta 'veri temizliğinin ilk savunma hattı' olarak anlatılıyor; I/O kapsam dışı ama temizlikle ilişkili."
+      }
+     }
+    },
+    "pd-secim": {
+     "kapsam": "disi"
+    },
+    "pd-filtre": {
+     "kapsam": "disi",
+     "slaytlar": {
+      "32": {
+       "kapsam": "belirsiz",
+       "not": "Boolean indeksleme kapsam dışı ama temizlikte (ör. hatalı satırları seçmek) kullanılıyor."
+      },
+      "33": {
+       "kapsam": "belirsiz",
+       "not": "Boolean indeksleme: temizlik için gerektiği kadar."
+      },
+      "34": {
+       "kapsam": "belirsiz",
+       "not": "& | ~ operatörleri: temizlik için gerektiği kadar."
+      }
+     }
+    },
+    "pd-birlestir": {
+     "kapsam": "disi"
+    },
+    "pd-groupby": {
+     "kapsam": "disi"
+    },
+    "pd-reshape": {
+     "kapsam": "disi"
+    },
+    "pd-zaman": {
+     "kapsam": "disi"
+    }
+   }
+  },
+  "u-hw1": {
+   "baslik": "HW1",
+   "kapsam": "ici",
+   "not": "Homework 1 (content/odev1.md) Analysis kavramları; hoca: 'This homework will be embedded in the Midterm exam.'"
+  }
+ },
+ "bekleyen": [
+  {
+   "ad": "Moodle zorunlu ve ek materyaller",
+   "dosya": "content/",
+   "not": "Gelince content/ klasörüne eklenecek."
+  }
+ ],
+ "varsayilanAgirlik": {
+  "HW1": 15
+ }
+}
