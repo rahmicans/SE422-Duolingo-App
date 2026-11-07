@@ -31,18 +31,28 @@
 
 <aside class="terminal" id="terminal" aria-label="Python terminali">
   <div class="terminal-ust">
-    <span><span class="nokta"></span>Python + NumPy terminali</span>
-    <div>
-      <button id="terminal-temizle">Temizle</button>
-      <button id="terminal-sifirla">Sıfırla</button>
-      <button id="terminal-kapat" aria-label="Kapat">✕</button>
+    <span class="t-baslik"><span class="nokta" id="t-nokta"></span>Python + NumPy + pandas</span>
+    <div class="t-pencere">
+      <button id="t-tam" title="Tam ekran" aria-label="Tam ekran" aria-pressed="false">⛶</button>
+      <button id="terminal-kapat" title="Kapat (Esc)" aria-label="Kapat">✕</button>
     </div>
   </div>
-  <div class="terminal-ekran" id="terminal-ekran"><div class="t-bilgi">Python terminali · NumPy hazır (np olarak yüklü). Değişkenler komutlar arasında korunur.
-Enter: çalıştır · ↑/↓: önceki komutlar · ":" ile biten satır blok başlatır, boş satır bitirir.</div></div>
-  <div class="terminal-girdi">
-    <span id="terminal-istem">&gt;&gt;&gt;</span>
-    <input id="terminal-input" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="np.arange(5)">
+  <div class="t-arac" role="toolbar" aria-label="Terminal araçları">
+    <button id="t-calistir" class="t-ana" title="Çalıştır (Ctrl/⌘ + Enter)">▶ Çalıştır <kbd>⌘↵</kbd></button>
+    <button id="t-durdur" disabled title="Çalışan kodu durdur">■ Durdur</button>
+    <button id="t-temizle" title="Çıktıyı temizle">Temizle</button>
+    <button id="t-kod-sifirla" title="Kodu slayttaki orijinal haline döndür">↺ Kodu sıfırla</button>
+    <button id="t-kopyala" title="Çıktıyı panoya kopyala">⧉ Kopyala</button>
+    <button id="terminal-sifirla" title="Tüm değişkenleri sil">Oturumu sıfırla</button>
+  </div>
+  <div class="t-govde" id="t-govde">
+    <div class="t-editor" id="t-editor"></div>
+    <div class="t-ayirici" id="t-ayirici" role="separator" aria-orientation="horizontal" aria-label="Editör ve çıktı arasındaki ayırıcı" tabindex="0"></div>
+    <div class="t-cikti-kap">
+      <div class="t-durum-satir"><span id="t-durum" class="t-durum">Hazır</span><span id="t-sure" class="t-sure"></span></div>
+      <div class="terminal-ekran" id="terminal-ekran" tabindex="0"><div class="t-bilgi">NumPy (np) ve pandas (pd) hazır yüklü. Değişkenler çalıştırmalar arasında korunur.
+Ctrl/⌘ + Enter: çalıştır · Tab: 4 boşluk · Shift + Tab: girintiyi azalt · Esc: kapat</div></div>
+    </div>
   </div>
 </aside>
 
@@ -61,6 +71,11 @@ Enter: çalıştır · ↑/↓: önceki komutlar · ":" ile biten satır blok ba
 <script src="/static/mufredat/12-ortamlar.js"></script>
 <script src="/static/mufredat/13-numpy1.js"></script>
 <script src="/static/mufredat/14-numpy2.js"></script>
+<script src="/static/mufredat/15-pandas.js"></script>
+<script src="/static/sure.js"></script>
+<script src="/static/editor.js"></script>
+<script src="/static/md.js"></script>
 <script src="/static/uygulama.js"></script>
+<script src="/static/notlar.js"></script>
 </body>
 </html>

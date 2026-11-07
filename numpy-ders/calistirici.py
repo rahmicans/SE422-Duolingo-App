@@ -14,9 +14,11 @@ import contextlib
 import io
 import json
 import sys
+import time
 import traceback
 
 import numpy as np
+import pandas as pd
 
 DOSYA_ADI = "<girdi>"
 
@@ -33,14 +35,30 @@ def hata_metni(hata):
     return "".join(traceback.format_exception(type(hata), hata, tb))
 
 
-def calistir(kod, ad_alani, yankila=False):
-    """Kodu çalıştırır, (çıktı, hata) döndürür.
+def hata_satiri(hata):
+    """Hatanın kullanıcı kodundaki satır numarası (1'den başlar) ya da None."""
+    if isinstance(hata, SyntaxError) and hata.filename == DOSYA_ADI:
+        return hata.lineno
+    satir = None
+    tb = hata.__traceback__
+    while tb is not None:
+        if tb.tb_frame.f_code.co_filename == DOSYA_ADI:
+            satir = tb.tb_lineno
+        tb = tb.tb_next
+    return satir
+
+
+def calistir_ayrintili(kod, ad_alani, yankila=False, stderr_ayri=True):
+    """Kodu çalıştırır; cikti, stderr, hata (traceback metni), hata_tipi, hata_mesaji, satir ve sure döndürür.
 
     yankila=True ise Python terminali gibi son ifadenin değerini de yazdırır.
+    stderr_ayri=False ise stderr de cikti'ya yazılır (eski davranış).
     """
     cikti = io.StringIO()
-    hata = None
-    with contextlib.redirect_stdout(cikti), contextlib.redirect_stderr(cikti):
+    hata_akisi = io.StringIO() if stderr_ayri else cikti
+    sonuc = {"hata": None, "hata_tipi": None, "hata_mesaji": None, "satir": None}
+    baslangic = time.perf_counter()
+    with contextlib.redirect_stdout(cikti), contextlib.redirect_stderr(hata_akisi):
         try:
             agac = ast.parse(kod, DOSYA_ADI, "exec")
             son_ifade = None
@@ -52,12 +70,20 @@ def calistir(kod, ad_alani, yankila=False):
                 if deger is not None:
                     print(repr(deger))
         except BaseException as h:  # noqa: B036 - kullanıcı kodu her şeyi fırlatabilir
-            hata = hata_metni(h)
-    return cikti.getvalue(), hata
+            sonuc.update(hata=hata_metni(h), hata_tipi=type(h).__name__, hata_mesaji=str(h), satir=hata_satiri(h))
+    sonuc.update(cikti=cikti.getvalue(), stderr=hata_akisi.getvalue() if stderr_ayri else "",
+                 sure=round(time.perf_counter() - baslangic, 4))
+    return sonuc
+
+
+def calistir(kod, ad_alani, yankila=False):
+    """Kodu çalıştırır, (çıktı, hata) döndürür; stderr çıktıya karışır (alıştırma kontrolü için eski davranış)."""
+    s = calistir_ayrintili(kod, ad_alani, yankila, stderr_ayri=False)
+    return s["cikti"], s["hata"]
 
 
 def yeni_ad_alani():
-    return {"__name__": "__main__", "np": np}
+    return {"__name__": "__main__", "np": np, "pd": pd}
 
 
 def repl_modu():
@@ -67,10 +93,10 @@ def repl_modu():
         istek = json.loads(satir)
         if istek.get("sifirla"):
             ad_alani = yeni_ad_alani()
-            cikti, hata = "", None
+            sonuc = {"cikti": "", "hata": None}
         else:
-            cikti, hata = calistir(istek["kod"], ad_alani, yankila=True)
-        kanal.write(json.dumps({"cikti": cikti, "hata": hata}) + "\n")
+            sonuc = calistir_ayrintili(istek["kod"], ad_alani, yankila=True)
+        kanal.write(json.dumps(sonuc) + "\n")
         kanal.flush()
 
 
@@ -83,7 +109,7 @@ def kontrol_modu():
     cozum = yeni_ad_alani()
     beklenen_cikti, _ = calistir(istek["cozum"], cozum)
 
-    kapsam = {"np": np, "u": kullanici, "r": cozum,
+    kapsam = {"np": np, "pd": pd, "u": kullanici, "r": cozum,
               "cikti": cikti, "beklenen_cikti": beklenen_cikti}
     sonuclar = []
     for ifade, aciklama in istek["kontroller"]:

@@ -19,6 +19,7 @@ import sys
 import traceback
 
 import numpy as np
+import pandas as pd
 
 import kavramlar
 import sinav
@@ -39,7 +40,7 @@ def calistir(kod):
         return "", e, (e.lineno or 1) - 1
     try:
         with contextlib.redirect_stdout(tampon):
-            exec(derlenmis, {"np": np, "__name__": "__main__"})
+            exec(derlenmis, {"np": np, "pd": pd, "__name__": "__main__"})
     except BaseException as e:  # noqa: BLE001
         satir = None
         for cerceve in traceback.extract_tb(e.__traceback__):
@@ -260,6 +261,42 @@ HATALAR = {
     "np2-ufunc": [
         lambda: (["a = np.ones((3, 4))", "b = np.arange(3)", "print(a + b)"], "Sondaki boyutlar 4 ve 3; ikisi de 1 değil, broadcasting yapılamaz (ValueError)."),
     ],
+    "pd-series": [
+        lambda: ([f"s = pd.Series({_l(3)}, index=['a', 'b', 'c'])", "print(s['a'])", "print(s['z'])"],
+                 "Series'te 'z' etiketi yok (KeyError)."),
+    ],
+    "pd-dataframe": [
+        lambda: (_karistir_dolgu(["data = {", f"    'Name': {random.sample(['Ada', 'Can', 'Ece', 'Mert'], 3)},", f"    'Age': {_l(2)},", "}", "df = pd.DataFrame(data)"]),
+                 "Listelerden oluşan sözlükte tüm listeler aynı uzunlukta olmalı (ValueError)."),
+    ],
+    "pd-io": [
+        lambda: (_karistir_dolgu([f"df = pd.read_csv('yok_{random.randint(1000, 9999)}.csv')", "print(df.head())"]),
+                 "Okunmak istenen CSV dosyası yok (FileNotFoundError)."),
+    ],
+    "pd-secim": [
+        lambda: ([f"df = pd.DataFrame({{'Age': {_l(3)}}}, index=['Ada', 'Can', 'Ece'])", "print(df.loc['Can'])", "print(df.iloc['Ece'])"],
+                 "iloc yalnızca tam sayı konum kabul eder; etiketle seçim için loc kullanılmalı (TypeError)."),
+        lambda: ([f"df = pd.DataFrame({{'Age': {_l(3)}, 'Fare': {_l(3)}}})", "print(df['Age'])", "print(df['Agee'])"],
+                 "DataFrame'de 'Agee' adında sütun yok (KeyError)."),
+    ],
+    "pd-filtre": [
+        lambda: (_karistir_dolgu([f"df = pd.DataFrame({{'Age': {random.sample(range(10, 70), 4)}}})", "if df['Age'] > 30:", "    print('30 üstü var')"]),
+                 "Bütün bir Series tek bir True/False'a indirgenemez: 'truth value of a Series is ambiguous' (ValueError)."),
+        lambda: ([f"df = pd.DataFrame({{'Age': {random.sample(range(10, 70), 4)}}})", "secilen = df[df['Age'] > 20 and df['Age'] < 50]"],
+                 "Pandas filtrelemede and yerine & kullanılmalı: (df['Age'] > 20) & (df['Age'] < 50) (ValueError)."),
+    ],
+    "pd-birlestir": [
+        lambda: (["a = pd.DataFrame({'k': [1, 1, 2], 'v': [5, 6, 7]})", "b = pd.DataFrame({'k': [1, 2], 'w': [8, 9]})",
+                  "print(pd.merge(a, b, on='k', validate='m:1').shape)", "print(pd.merge(a, b, on='k', validate='1:1').shape)"],
+                 "Soldaki anahtar 1 tekrar ediyor; validate='1:1' doğrulaması MergeError fırlatır."),
+        lambda: (["df1 = pd.DataFrame({'user_id': [1, 2], 'ad': ['Ada', 'Can']})", "df2 = pd.DataFrame({'customer_id': [1, 2], 'tutar': [10, 20]})",
+                  "print(pd.merge(df1, df2, on='user_id'))"],
+                 "'user_id' sağ tabloda yok; farklı adlı anahtarlar için left_on/right_on kullanılmalı (KeyError)."),
+    ],
+    "pd-zaman": [
+        lambda: (_karistir_dolgu([f"t = pd.to_datetime('{random.choice(['dün', 'abc', '2024-13-45'])}')", "print(t.year)"]),
+                 "Metin geçerli bir tarih olarak çözümlenemiyor (DateParseError/ValueError)."),
+    ],
 }
 
 
@@ -352,6 +389,34 @@ TAMAMLAMALAR = {
     "np2-toplama": [lambda: (lambda e: (f"m = np.array([[1, 2, 3], [4, 5, 6]])\nprint(m.sum(axis=___))", [str(e)]))(random.choice([0, 1]))],
     "np2-reshape": [lambda: (f"print(np.arange({random.choice([12, 24])}).reshape(4, ___).shape)", ["-1"])],
     "np2-birlestir": [lambda: ("a = np.zeros((2, 3))\nb = np.ones((1, 3))\nprint(np.___((a, b)).shape)", ["vstack"])],
+    "pd-series": [lambda: (f"s = pd.___({_l(3)}, index=['a', 'b', 'c'])\nprint(s['b'])", ["Series"])],
+    "pd-dataframe": [lambda: (f"df = pd.___({{'x': {_l(3)}, 'y': {_l(3)}}})\nprint(df.shape)", ["DataFrame"])],
+    "pd-inceleme": [
+        lambda: (f"df = pd.DataFrame({{'x': {_l(random.randint(2, 6))}, 'y': 0}})\nprint(df.___)", ["shape"]),
+        lambda: (f"df = pd.DataFrame({{'x': list(range({random.randint(7, 12)}))}})\nprint(len(df.___()))", ["head", "tail"]),
+    ],
+    "pd-io": [lambda: (f"df = pd.DataFrame({{'a': {_l(2)}}})\ndf.to_csv('v.csv', ___=False)\nprint(pd.read_csv('v.csv').columns.tolist())", ["index"])],
+    "pd-secim": [
+        lambda: (f"df = pd.DataFrame({{'x': {_l(5)}}})\nprint(df.___[1:3, 0].tolist())", ["iloc"]),
+        lambda: (f"df = pd.DataFrame({{'x': {_l(5)}}})\nprint(df.___[1:3, 'x'].tolist())", ["loc"]),
+    ],
+    "pd-filtre": [lambda: (f"df = pd.DataFrame({{'Age': {random.sample(range(5, 70), 6)}}})\nprint(df[(df['Age'] > 18) ___ (df['Age'] < 50)]['Age'].tolist())", ["&"])],
+    "pd-eksik": [lambda: (f"df = pd.DataFrame({{'a': [1, None, 3], 'b': {random.choice(['[None, None, 6]', '[4, 5, None]', '[None, 5, 6]'])}}})\nprint(df.___().sum().tolist())", ["isna", "isnull"])],
+    "pd-doldur": [
+        lambda: (f"s = pd.Series([{random.randint(1, 9)}.0, None, {random.randint(1, 9)}.0])\nprint(s.___(0).tolist())", ["fillna"]),
+        lambda: (f"df = pd.DataFrame({{'a': [1, None, 3], 'b': [None, None, {random.randint(1, 9)}]}})\nprint(df.dropna(how=___).shape)", ["'all'", '"all"']),
+    ],
+    "pd-birlestir": [
+        lambda: ("a = pd.DataFrame({'x': [1, 2]})\nb = pd.DataFrame({'x': [3, 4]})\nprint(pd.concat([a, b], ___=True).index.tolist())", ["ignore_index"]),
+        lambda: (lambda h: ("df1 = pd.DataFrame({'id': ['s1', 's2', 's3']})\ndf2 = pd.DataFrame({'id': ['s1', 's2', 's4']})\n"
+                            "print(len(pd.merge(df1, df2, on='id', how=___)))", [f"'{h}'", f'"{h}"']))(random.choice(["outer", "inner"])),
+    ],
+    "pd-groupby": [
+        lambda: (f"df = pd.DataFrame({{'g': ['a', 'b', 'a'], 'v': {_l(3)}}})\nprint(df.___('g')['v'].sum().tolist())", ["groupby"]),
+        lambda: (f"df = pd.DataFrame({{'g': ['a', 'b', 'a'], 'v': {_l(3)}}})\nprint(df.groupby('g')['v'].___('sum').tolist())", ["transform"]),
+    ],
+    "pd-reshape": [lambda: (f"genis = pd.DataFrame({{'id': [1, 2], '2023': {_l(2)}, '2024': {_l(2)}}})\nprint(pd.___(genis, id_vars=['id']).shape)", ["melt"])],
+    "pd-zaman": [lambda: (f"t = pd.___('2024-{random.randint(1, 12):02d}-{random.randint(1, 28):02d}')\nprint(t.month)", ["to_datetime", "Timestamp"])],
 }
 
 
@@ -419,9 +484,25 @@ def _p_liste():
     return [f"l = {_l(3)}", f"l.append({random.randint(30, 40)})", "l.sort()", "print(l)"]
 
 
+def _p_pd_filtre():
+    esik = random.choice([18, 30, 40])
+    return [f"df = pd.DataFrame({{'Age': {random.sample(range(5, 70), 5)}}})", f"mask = df['Age'] > {esik}", "sonuc = df[mask]", "print(len(sonuc))"]
+
+
+def _p_pd_groupby():
+    return [f"df = pd.DataFrame({{'g': ['a', 'b', 'a', 'b'], 'v': {_l(4)}}})", "gruplar = df.groupby('g')",
+            "ozet = gruplar['v'].sum()", "print(ozet.to_dict())"]
+
+
+def _p_pd_io():
+    return ["import io", f"metin = 'ad,yas\\n{random.choice(['Ada', 'Can'])},{random.randint(18, 60)}'",
+            "df = pd.read_csv(io.StringIO(metin))", "print(df.shape)"]
+
+
 PARSONS = {"kontrol-toplam": _p_toplam, "fonk-donus": _p_fonk, "kontrol-while": _p_while, "dosya-io": _p_dosya,
            "sinif-tanim": _p_sinif, "ozyineleme-giris": _p_fact, "dosya-istisna": _p_try, "vt-tablo": _p_sql,
-           "np2-maske": _p_maske, "liste-metot": _p_liste}
+           "np2-maske": _p_maske, "liste-metot": _p_liste,
+           "pd-filtre": _p_pd_filtre, "pd-groupby": _p_pd_groupby, "pd-io": _p_pd_io}
 
 
 def satir_sirala(konu):

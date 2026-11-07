@@ -1,4 +1,4 @@
-"""Final sınavı üreticisi (14 slayt destesinin tamamı).
+"""Final sınavı üreticisi (15 slayt destesinin tamamı).
 
 Her soru bir şablondan rastgele parametrelerle üretilir ve doğru cevap gerçek
 NumPy ile hesaplanır. Her sorunun bir "parmak izi" vardır; daha önce görülen

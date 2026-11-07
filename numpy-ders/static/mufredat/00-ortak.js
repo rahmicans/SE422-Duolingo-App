@@ -1,4 +1,4 @@
-// Müfredat ortak tanımları — SE 422 Introduction to Data Science (14 slayt destesi)
+// Müfredat ortak tanımları — SE 422 Introduction to Data Science (15 slayt destesi)
 //
 // Her ünite bir slayt destesine, her ders bir slayt aralığına karşılık gelir.
 // "slayt: [a, b]" a'dan b'ye kadar olan slaytları kapsar (testler.py tüm slaytların kapsandığını doğrular).

@@ -47,7 +47,8 @@ function kodKutusu(kod, dene = true) {
   if (!dene) return `<pre class="kod-blok soru-kod">${renklendir(kod)}</pre>`;
   DENE_KODLARI.push(kod);
   return `<div class="kod-kutu"><div class="kod-kutu-ust"><span>Python</span>
-    <button class="dbtn mavi kucuk" data-dene="${DENE_KODLARI.length - 1}">▶ Terminalde dene</button></div>
+    <span class="kod-kutu-btn"><button class="dbtn beyaz kucuk" data-nota-ekle="${DENE_KODLARI.length - 1}" title="Bu kodu slaytın notuna ekle">📝 Nota ekle</button>
+    <button class="dbtn mavi kucuk" data-dene="${DENE_KODLARI.length - 1}">▶ Terminalde dene</button></span></div>
     <pre class="kod-blok">${renklendir(kod)}</pre></div>`;
 }
 
@@ -113,7 +114,7 @@ function ses(tur) {
 const ANAHTAR = "se422-ders-v1";
 const durum = (() => {
   const varsayilan = { tamamlanan: {}, ogeler: {}, xp: 0, gunluk: {}, ses: true, sinavlar: [], gorulenSinav: [], kodlar: {},
-    konular: {}, oturumlar: [], gorulenUretilen: [], tema: "sistem" };
+    konular: {}, oturumlar: [], gorulenUretilen: [], tema: "sistem", sureler: {}, notAyar: { bosBolumler: "goster" } };
   try {
     return { ...varsayilan, ...JSON.parse(localStorage.getItem(ANAHTAR) || "{}") };
   } catch {
@@ -138,8 +139,6 @@ function temaSec(tema) {
   menuCiz();
   sagPanelCiz();
 }
-const temaSeciciHtml = () => `<div class="tema-secici" role="group" aria-label="Tema">${Object.entries(TEMALAR).map(([k, t]) =>
-  `<button data-tema="${k}" class="${durum.tema === k ? "aktif" : ""}" aria-pressed="${durum.tema === k}">${t.ikon} ${t.ad}</button>`).join("")}</div>`;
 function kaydet() {
   try { localStorage.setItem(ANAHTAR, JSON.stringify(durum)); } catch { /* depolama kapalı olabilir */ }
 }
@@ -167,6 +166,23 @@ UNITELER.forEach((unite) => {
 });
 DUGUMLER.push({ tip: "sinav", id: "final" });
 const dersBul = (id) => DERSLER.find((d) => d.ders.id === id);
+
+// Not bağlamı: her anlatım kartı bir bölüm + slayta bağlanır (static/notlar.js kullanır)
+const ADIM_BAGLAM = new WeakMap();
+UNITELER.forEach((u, ui) => u.dersler.forEach((d) => d.adimlar.forEach((a) => {
+  if (a.tip === "ogren") {
+    ADIM_BAGLAM.set(a, { unite: u.id, uniteNo: ui + 1, uniteBaslik: u.baslik, slayt: a.slayt?.[0] ?? 0, slaytYazisi: slaytYazisi(a.slayt), baslik: a.baslik });
+  }
+})));
+const baglamAttr = (adim) => (ADIM_BAGLAM.has(adim) ? ` data-not-baglam="${kacis(JSON.stringify(ADIM_BAGLAM.get(adim)))}"` : "");
+// Bir derste soru ekranındayken not paneli, dersin o ana kadarki son anlatım kartına bağlanır
+function dersBaglami(dersId, adimSirasi) {
+  const ders = dersBul(dersId)?.ders;
+  if (!ders) return null;
+  const kartlar = ders.adimlar.filter((a) => a.tip === "ogren");
+  const once = ders.adimlar.slice(0, adimSirasi + 1).filter((a) => a.tip === "ogren");
+  return ADIM_BAGLAM.get(once.at(-1) || kartlar[0]) || null;
+}
 
 const GUNLUK_HEDEF = 30;
 const USTA_KUTU = 2;
@@ -204,6 +220,41 @@ function xpEkle(miktar) {
 }
 
 let ALISTIRMALAR = {};
+
+// ============================================================
+// Süre: tahmin (static/sure.js), harcanan süre ve kişisel hız
+// ============================================================
+const sinavGectiMi = () => durum.sinavlar.some((s) => s.gecti);
+function hizKatsayisi() {
+  const ornekler = DERSLER.filter(({ ders }) => durum.tamamlanan[ders.id])
+    .map(({ ders }) => ({ tahminDk: SURE.ders(ders), gercekSn: durum.sureler[ders.id] || 0 }));
+  return SURE.hizKatsayisi(ornekler);
+}
+function kalanSure() {
+  const katsayi = hizKatsayisi();
+  return { ...SURE.kalan(UNITELER, durum.tamamlanan, sinavGectiMi(), katsayi), katsayi, kisisel: katsayi !== null };
+}
+const harcananSn = (u) => u.dersler.reduce((t, d) => t + (durum.sureler[d.id] || 0), 0) + (durum.sureler[`${u.id}-tekrar`] || 0);
+// "Bu süre nasıl hesaplandı?": süre etiketinin üzerine gelince ya da tıklanınca açılan küçük ipucu
+function sureIpucuMetni() {
+  const { K, SORU, HIZ } = SURE;
+  const k = kalanSure();
+  return `<b>Bu süre nasıl hesaplandı?</b> Slayt başına ${K.slayt} dk, anlatım kartı ${K.kart} dk, kod örneği +${K.kodOrnegi} dk; `
+    + `sorular türüne göre ${SORU.dogruyanlis}–${SORU.cikti} dk, kod alıştırması ${SORU.kod} dk; bölüm tekrarı ≈ ${SURE.yazi(K.tekrar)}. `
+    + `Derste geçirdiğin aktif süre (sekme açık, son 60 sn'de etkinlik) kaydedilir. `
+    + (k.kisisel ? `<b>Senin hızına göre</b> ayarlandı (×${k.katsayi.toFixed(2)}).`
+      : `${HIZ.enAzDers} ders ölçülünce tahmin senin hızına göre ayarlanır.`);
+}
+// Bölüm başlığındaki süre etiketi: "⏱ ≈ 45 dk" ya da başladıysa "⏱ 20 / 45 dk" (harcanan / tahmini)
+function sureEtiketiHtml(u) {
+  const tahmin = SURE.unite(u).toplam * (hizKatsayisi() || 1);
+  const sn = harcananSn(u);
+  const harcananDk = Math.round(sn / 60);
+  const t = SURE.yazi(tahmin);
+  const yazi = harcananDk >= 1 ? `${harcananDk < 60 && /^\d+ dk$/.test(t) ? harcananDk : SURE.yazi(harcananDk)} / ${t}` : `≈ ${t}`;
+  return `<span class="sure-ipucu" tabindex="0" role="button" data-sure-ipucu aria-label="Tahmini süre ${t}">⏱ ${yazi}`
+    + `<span class="ipucu-balon" role="tooltip">${sureIpucuMetni()}</span></span>`;
+}
 
 // ============================================================
 // Ders takibi (barem): konu (ders) bazında başarı, hatalar ve durum
@@ -411,7 +462,7 @@ document.addEventListener("mousemove", (e) => {
 // ============================================================
 // Sayfa iskeleti: menü, sağ panel
 // ============================================================
-let sayfa = ["ogren", "pekistir", "barem", "notlar", "sinav"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "ogren";
+let sayfa = ["ogren", "pekistir", "barem", "notlar", "claude", "sinav"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "ogren";
 let acikDugum = null;
 
 function menuCiz() {
@@ -421,6 +472,7 @@ function menuCiz() {
     { id: "pekistir", ikon: "💪", yazi: "Pekiştir", rozet: zayif || "" },
     { id: "barem", ikon: "📊", yazi: "Barem" },
     { id: "notlar", ikon: "📖", yazi: "Notlar" },
+    { id: "claude", ikon: "✳️", yazi: "Claude'un notları" },
     { id: "sinav", ikon: "🏆", yazi: "Sınav" },
     { id: "terminal", ikon: "💻", yazi: "Terminal" },
   ];
@@ -443,29 +495,32 @@ function istatistikHtml() {
 
 function sagPanelCiz() {
   const bugunXp = durum.gunluk[yerelTarih()] || 0;
+  const k = kalanSure();
   const uniteler = UNITELER.map((u) => {
     const tamam = u.dersler.filter((d) => durum.tamamlanan[d.id]).length;
     return `<div class="unite-ilerleme-satir" style="${renkStil(u.renk)}"><span>${kacis(u.baslik)}</span>
-      <div class="cubuk"><div style="width:${(tamam / u.dersler.length) * 100}%"></div></div></div>`;
+      <div class="cubuk"><div style="width:${(tamam / u.dersler.length) * 100}%"></div></div>
+      ${k.bolumler[u.id] < 0.5 ? `<small class="sure-kucuk">✓</small>` : sureEtiketiHtml(u)}</div>`;
   }).join("");
   $("#sag-panel").innerHTML = `
     ${istatistikHtml()}
     <div class="kart"><h3>Günlük hedef</h3>
       <div class="hedef-satir"><div class="cubuk sari"><div style="width:${Math.min(bugunXp / GUNLUK_HEDEF, 1) * 100}%"></div></div>
       <span>${bugunXp}/${GUNLUK_HEDEF} XP</span></div></div>
-    <div class="kart"><h3>Bölüm ilerlemesi</h3><div class="unite-ilerleme">${uniteler}</div></div>
+    <div class="kart"><h3>Bölüm ilerlemesi</h3>
+      <p class="kalan-sure">${k.toplam < 0.5 ? "🎉 Platformu bitirdin" : `Toplam kalan: <b>≈ ${SURE.yazi(k.toplam)}</b>${k.kisisel ? " · senin hızına göre" : ""}`}</p>
+      <div class="unite-ilerleme">${uniteler}</div></div>
     <div class="kart"><h3>SE 422 · Introduction to Data Science</h3>
       <p>${UNITELER.length} slayt destesi · ${UNITELER.reduce((t, u) => t + u.slaytSayisi, 0)} slayt</p>
       <p>${DERSLER.length} ders · ${Object.keys(OGELER).length} soru · ${Object.keys(OGELER).filter((id) => OGELER[id].adim.tip === "kod").length} kod alıştırması + final sınavı</p>
-      <button class="dbtn beyaz genis" data-git="terminal">💻 Terminali aç</button></div>
-    <div class="kart"><h3>Görünüm</h3>${temaSeciciHtml()}</div>`;
+      <button class="dbtn beyaz genis" data-git="terminal">💻 Terminali aç</button></div>`;
   $("#mobil-ust").innerHTML = `${istatistikHtml()}<button class="dbtn beyaz kucuk" data-tema title="Tema: ${TEMALAR[durum.tema].ad}">${TEMALAR[durum.tema].ikon}</button><button class="dbtn beyaz kucuk" data-git="terminal">&gt;_</button>`;
 }
 
 function yenile() {
   menuCiz();
   sagPanelCiz();
-  ({ ogren: yolCiz, pekistir: pekistirCiz, barem: baremCiz, notlar: notlarCiz, sinav: sinavSayfasiCiz })[sayfa]();
+  ({ ogren: yolCiz, pekistir: pekistirCiz, barem: baremCiz, notlar: notlarCiz, claude: claudeCiz, sinav: sinavSayfasiCiz })[sayfa]();
 }
 
 function git(hedef) {
@@ -484,13 +539,17 @@ const KAYMA = [0, -56, -84, -56, 0, 56, 84, 56];
 
 function yolCiz() {
   const aktif = aktifDugumIndeksi();
+  const k = kalanSure();
   let html = "";
   let sira = 0;
   UNITELER.forEach((u, ui) => {
+    const bitti = k.bolumler[u.id] < 0.5;
     html += `<section style="${renkStil(u.renk)}">
       <div class="unite-baslik">
-        <div><div class="ust-yazi">Bölüm ${ui + 1} · ${u.slaytSayisi} slayt</div><h2>${kacis(u.baslik)}</h2><div class="alt-yazi">${kacis(u.altBaslik)}</div></div>
-        <button class="dbtn" data-notlar="${u.id}">📖 Notlar</button>
+        <div><div class="ust-yazi">Bölüm ${ui + 1} · ${u.slaytSayisi} slayt ${bitti ? `<span class="sure-ipucu">✓ tamamlandı</span>` : sureEtiketiHtml(u)}</div>
+          <h2>${kacis(u.baslik)}</h2><div class="alt-yazi">${kacis(u.altBaslik)}</div>
+          ${OZETLER[u.id] ? `<button class="claude-baglanti" data-claude="${u.id}">Bu bölümün Claude özeti →</button>` : ""}</div>
+        <div class="unite-btnlar"><button class="dbtn" data-notlar="${u.id}">📖 Notlar</button>${uniteBelgeBtnlari(u)}</div>
       </div><div class="dugumler">`;
     sira = 0;
     DUGUMLER.forEach((d, i) => {
@@ -501,7 +560,13 @@ function yolCiz() {
   });
   const sinavIndeksi = DUGUMLER.length - 1;
   html += `<section style="${renkStil("altin")}"><div class="dugumler">${dugumHtml(DUGUMLER[sinavIndeksi], sinavIndeksi, aktif, 0)}</div></section>`;
-  $("#sayfa").innerHTML = `<div class="yol">${dikkatBandi()}${html}</div>`;
+  // Tam kitapçık bandı yalnızca tüm bölümler bitince (öncesinde not PDF'leri Notlarım panelinde ve Notlar sayfasında)
+  const kitapcik = aktif === -1
+    ? `<div class="kitapcik-bandi tam"><span class="ikon">📘</span><div><b>Tüm bölümleri tamamladın! Notlarını kitapçık olarak indir.</b>
+        <div class="sure-alt">Kapak, içindekiler, bölüm bölüm notların ve sayfa numaralarıyla tek PDF.</div></div>
+        <button class="dbtn yesil" data-kitapcik>📘 Tüm notlarım – kitapçık</button></div>`
+    : "";
+  $("#sayfa").innerHTML = `<div class="yol">${kitapcik}${dikkatBandi()}${html}</div>`;
   const aktifEl = $(".dugum.aktif");
   if (aktifEl && !yolCiz.kaydirildi) {
     yolCiz.kaydirildi = true;
@@ -586,10 +651,15 @@ function pekistirCiz() {
   </div>`;
 }
 
+// Kullanıcının kendi notlarının PDF'i (Claude'un özetleri yalnızca "Claude'un notları" sekmesinde)
+function uniteBelgeBtnlari(u, acik = false) {
+  return `<button class="${acik ? "dbtn beyaz kucuk" : "dbtn"}" data-not-pdf="${u.id}" title="Bu bölümdeki kendi notlarını PDF olarak indir">📄 Notlarım (PDF)</button>`;
+}
+
 function anlatimHtml(adim, dersRenk) {
   const cizim = adim.cizim ? CIZIM[adim.cizim] : "";
-  return `<div class="anlatim" style="${dersRenk ? renkStil(dersRenk) : ""}">
-    <span class="etiket">${slaytYazisi(adim.slayt)}</span>
+  return `<div class="anlatim" style="${dersRenk ? renkStil(dersRenk) : ""}"${baglamAttr(adim)}>
+    <div class="anlatim-ust"><span class="etiket">${slaytYazisi(adim.slayt)}</span><button class="not-al-btn" data-not-al title="Bu slayta not al">📝 Not al</button></div>
     <h2>${kacis(adim.baslik)}</h2>${adim.metin}${cizim}${adim.kod ? kodKutusu(adim.kod) : ""}</div>`;
 }
 
@@ -597,15 +667,54 @@ function notlarCiz() {
   const html = UNITELER.map((u, ui) => `
     <section class="not-unite" id="not-${u.id}" style="${renkStil(u.renk)}">
       <h2><span class="renk"></span>Bölüm ${ui + 1}: ${kacis(u.baslik)}</h2><p class="sayfa-aciklama">${kacis(u.kaynak)} · ${u.slaytSayisi} slayt · ${kacis(u.altBaslik)}</p>
+      <div class="btn-satir not-unite-btn">${uniteBelgeBtnlari(u, true)}</div>
       ${u.dersler.map((d) => `<div class="not-ders"><h3>${kacis(d.baslik)}</h3>
         ${d.adimlar.filter((a) => a.tip === "ogren").map((a) => `<div class="kart not-kart">${anlatimHtml(a, u.renk)}</div>`).join("")}
       </div>`).join("")}
     </section>`).join("");
   $("#sayfa").innerHTML = `<div class="sayfa"><h1 class="sayfa-baslik">Ders notları</h1>
-    <p class="sayfa-aciklama">Derslerdeki tüm anlatım kartları, slayt sırasıyla. Takıldığın yere dönüp tekrar okuyabilirsin.</p>${html}</div>`;
+    <p class="sayfa-aciklama">Derslerdeki tüm anlatım kartları, slayt sırasıyla. Takıldığın yere dönüp tekrar okuyabilirsin. Kartlardaki "📝 Not al" ile kendi notlarını ekle.</p>
+    <div class="btn-satir not-unite-btn"><button class="dbtn beyaz kucuk" data-not-panel>📝 Notlarım</button><button class="dbtn beyaz kucuk" data-kitapcik>📘 Notlarım – kitapçık (PDF)</button></div>${html}</div>`;
   if (notlarCiz.hedef) {
     $(`#not-${notlarCiz.hedef}`)?.scrollIntoView();
     notlarCiz.hedef = null;
+  }
+}
+
+// ============================================================
+// Claude'un notları: yapay zekâ ile üretilmiş bölüm özetleri (ozetler/*.md, API: /api/ozetler)
+// ============================================================
+let OZETLER = {};          // unite id → { ad, no, baslik, pdf }
+let OZET_LISTESI = null;   // /api/ozetler yanıtı
+const OZET_ONBELLEK = {};  // ad → markdown
+let claudeSecili = null;   // seçili bölümün unite id'si
+
+function claudeCiz() {
+  const liste = OZET_LISTESI?.ozetler || [];
+  if (!claudeSecili || !OZETLER[claudeSecili]) claudeSecili = liste[0]?.unite || null;
+  const secili = OZETLER[claudeSecili];
+  const bolumler = liste.map((o) => {
+    const u = UNITELER.find((x) => x.id === o.unite);
+    return `<div class="claude-bolum ${o.unite === claudeSecili ? "aktif" : ""}" style="${renkStil(u?.renk || "mavi")}">
+      <button class="claude-sec" data-claude="${o.unite}" aria-current="${o.unite === claudeSecili}"><span class="no">${o.no}</span>${kacis(o.baslik)}</button>
+      ${o.pdf ? `<a class="metin-btn" href="${o.pdf}" download title="${kacis(o.baslik)} özetini PDF olarak indir">PDF indir</a>` : ""}</div>`;
+  }).join("");
+  $("#sayfa").innerHTML = `<div class="sayfa genis-sayfa claude-sayfa">
+    <div class="claude-ust"><div><h1 class="sayfa-baslik">✳️ Claude'un notları</h1>
+      <p class="claude-uyari">⚠️ Bu notlar slaytlardan yapay zekâ ile üretildi. Sınav öncesi slaytla karşılaştır.</p></div>
+      ${OZET_LISTESI?.birlesik ? `<a class="dbtn beyaz kucuk" href="${OZET_LISTESI.birlesik}" download>📚 Tüm özetler (tek PDF)</a>` : ""}</div>
+    ${!OZET_LISTESI ? `<div class="kart"><p>Özetler yükleniyor…</p></div>` : !liste.length
+      ? `<div class="kart"><p>Henüz özet yok. Proje klasöründe <code>python3 ozet_pdf_uret.py</code> çalıştır.</p></div>`
+      : `<div class="claude-izgara">
+          <nav class="claude-liste" aria-label="Bölümler">${bolumler}</nav>
+          <article class="kart claude-icerik md" id="claude-icerik" style="${renkStil(UNITELER.find((x) => x.id === claudeSecili)?.renk || "mavi")}">
+            ${OZET_ONBELLEK[secili.ad] !== undefined ? mdHtml(OZET_ONBELLEK[secili.ad], { baslikKaydir: 0 }) : "<p>Özet yükleniyor…</p>"}</article>
+        </div>`}
+  </div>`;
+  if (secili && OZET_ONBELLEK[secili.ad] === undefined) {
+    api(`/api/ozetler/${encodeURIComponent(secili.ad)}`)
+      .then((r) => { OZET_ONBELLEK[secili.ad] = r.md || ""; if (sayfa === "claude") claudeCiz(); })
+      .catch(() => { const el = $("#claude-icerik"); if (el) el.innerHTML = "<p>Özet yüklenemedi. Sunucunun çalıştığından emin ol.</p>"; });
   }
 }
 
@@ -620,7 +729,7 @@ function sinavSayfasiCiz() {
   $("#sayfa").innerHTML = `<div class="sayfa">
     <div class="kahraman">${maskot(acik ? "mutlu" : "normal", 120)}
       <div><h1 class="sayfa-baslik">Final sınavı 🎓</h1>
-      <p class="sayfa-aciklama">14 slayt destesinin hepsinden karışık 25 soru. Sorular her seferinde gerçek NumPy ile <b>yeniden üretilir</b>, daha önce gördüklerin tekrar gelmez. Sınav sırasında doğru/yanlış gösterilmez. Geçmek için <b>%80</b> gerekir.</p></div></div>
+      <p class="sayfa-aciklama">${UNITELER.length} slayt destesinin hepsinden karışık 25 soru. Sorular her seferinde gerçek Python/NumPy/pandas ile <b>yeniden üretilir</b>, daha önce gördüklerin tekrar gelmez. Sınav sırasında doğru/yanlış gösterilmez. Geçmek için <b>%80</b> gerekir.</p></div></div>
     <div class="kart" style="margin-bottom:20px"><h3>Sınava girme koşulları</h3>
       <div class="kosul ${biten === toplam ? "tamam" : ""}"><span class="i">${biten === toplam ? "✓" : ""}</span>Tüm dersler ve bölüm tekrarları bitti (${biten}/${toplam})</div>
       <div class="kosul ${zayif === 0 && biten > 0 ? "tamam" : ""}"><span class="i">${zayif === 0 && biten > 0 ? "✓" : ""}</span>Zayıf soru kalmadı ${zayif ? `(${zayif} soru pekiştirilmeli)` : ""}</div>
@@ -638,6 +747,30 @@ function sinavSayfasiCiz() {
 // Oturum (ders / tekrar / pekiştirme / sınav) motoru
 // ============================================================
 let oturum = null;
+
+// Aktif süre: oturum açık, sekme görünür ve son 60 sn'de etkinlik varsa 5 sn'lik dilimlerle sayılır
+const BOSTA_SINIRI = 60000;
+let sonEtkinlik = Date.now();
+let sonTik = Date.now();
+["keydown", "pointerdown", "pointermove", "wheel", "touchstart", "scroll"].forEach((olay) =>
+  addEventListener(olay, () => { sonEtkinlik = Date.now(); }, { passive: true, capture: true }));
+function sureAnahtari(o) {
+  if (o.tur === "sinav") return "final";
+  if (o.tur === "pekistir") return "pekistir";
+  return o.hedefId;
+}
+function sureTik() {
+  const simdi = Date.now();
+  const gecen = Math.min(simdi - sonTik, 5000);
+  sonTik = simdi;
+  if (!oturum || oturum.bitti || document.visibilityState !== "visible" || simdi - sonEtkinlik > BOSTA_SINIRI) return;
+  const anahtar = sureAnahtari(oturum);
+  if (!anahtar) return;
+  durum.sureler[anahtar] = Math.round(((durum.sureler[anahtar] || 0) + gecen / 1000) * 10) / 10;
+  kaydet();
+}
+setInterval(sureTik, 5000);
+document.addEventListener("visibilitychange", () => { sonTik = Date.now(); });
 const OVGULER = ["Harika!", "Mükemmel!", "Süper!", "Doğru!", "Çok iyi!", "Aferin!"];
 
 // ---------- Benzer (varyant) soru üretimi: aynı dersten, sunucuda yeni üretilen sorular ----------
@@ -751,6 +884,7 @@ function oturumBaslat({ tur, hedefId, renk, adimlar, konular }) {
         <button class="kapat" id="ders-kapat" aria-label="Kapat">✕</button>
         <div class="cubuk"><div id="ders-cubuk" style="width:0%"></div></div>
         ${tur === "sinav" ? `<span class="seri-sayac" id="sinav-sayac">1/${adimlar.length}</span>` : `<span class="seri-sayac sonuk" id="seri-sayac">🔥 0</span>`}
+        ${tur === "sinav" ? "" : `<button class="term-ac" data-not-panel title="Notlarım">📝</button>`}
         <button class="term-ac" data-git="terminal" title="Terminal">&gt;_</button>
       </div>
       <div class="ders-govde"><div class="ders-ic" id="ders-ic"></div></div>
@@ -796,6 +930,10 @@ function adimGoster() {
   ic.innerHTML = rozet + `<div class="adim">${ctl.html}</div>`;
   // Her adım kendi taze kapsayıcısını alır; böylece önceki adımların dinleyicileri karışmaz
   ctl.baglan?.($(".adim", ic), altCiz);
+  if (oturum.tur !== "sinav" && typeof notBaglamAyarla === "function") {
+    const b = ADIM_BAGLAM.get(giris.adim) || (giris.konu && dersBaglami(giris.konu, dersBul(giris.konu)?.ders.adimlar.indexOf(giris.adim) ?? 0));
+    if (b) notBaglamAyarla(b, { kendiliginden: true });
+  }
   altCiz();
   cubukGuncelle();
   $(".ders-govde").scrollTop = 0;
@@ -970,7 +1108,16 @@ function dikkatListesiHtml(konuHatalari) {
     <p>Bu konulardan benzer sorular <b>Pekiştir</b>'de karşına çıkacak. Gelişimini <b>Barem</b> sayfasından izleyebilirsin.</p></div>`;
 }
 
+function bolumSonuHtml() {
+  const unite = oturum.tur === "tekrar" ? UNITELER.find((u) => `${u.id}-tekrar` === oturum.hedefId)
+    : oturum.tur === "ders" ? (() => { const b = dersBul(oturum.hedefId); return b && b.unite.dersler.at(-1) === b.ders ? b.unite : null; })() : null;
+  if (!unite) return "";
+  return `<div class="bolum-sonu"><h3>📚 "${kacis(unite.baslik)}" bölümünün sonu</h3>
+    <p>Bu bölümde aldığın notları PDF olarak indirebilirsin.</p><div class="btn-satir">${uniteBelgeBtnlari(unite, true)}</div></div>`;
+}
+
 function oturumBitir() {
+  sureTik();
   oturum.bitti = true;
   if (oturum.tur === "sinav") { sinavBitir(); return; }
 
@@ -999,7 +1146,7 @@ function oturumBitir() {
       <div class="bitis-kart" style="--r:var(--sari)"><div class="ust">Toplam XP</div><div class="alt">⚡ ${xp}</div></div>
       <div class="bitis-kart" style="--r:var(--yesil)"><div class="ust">Doğruluk</div><div class="alt">🎯 %${dogruluk}</div></div>
       <div class="bitis-kart" style="--r:var(--mavi)"><div class="ust">Süre</div><div class="alt">⏱ ${sureYazisi(Date.now() - oturum.baslangic)}</div></div>
-    </div>${dikkatListesiHtml(oturum.konuHatalari)}</div>`;
+    </div>${bolumSonuHtml()}${dikkatListesiHtml(oturum.konuHatalari)}</div>`;
   $("#ders-cubuk").style.width = "100%";
   $("#ders-alt").className = "ders-alt";
   const hataliKonular = Object.keys(oturum.konuHatalari).filter(dersBul);
@@ -1105,7 +1252,7 @@ const OLUSTURUCULAR = {
     return {
       tip: "ogren", adim,
       html: `<div class="konusma">${maskot("normal", 84)}<div class="balon">${kacis(adim.baslik)}</div></div>
-        <div class="anlatim"><span class="etiket">${slaytYazisi(adim.slayt)}</span>${adim.metin}${adim.cizim ? CIZIM[adim.cizim] : ""}${adim.kod ? kodKutusu(adim.kod) : ""}</div>`,
+        <div class="anlatim"${baglamAttr(adim)}><div class="anlatim-ust"><span class="etiket">${slaytYazisi(adim.slayt)}</span><button class="not-al-btn" data-not-al title="Bu slayta not al">📝 Not al</button></div>${adim.metin}${adim.cizim ? CIZIM[adim.cizim] : ""}${adim.kod ? kodKutusu(adim.kod) : ""}</div>`,
       hazir: () => true,
     };
   },
@@ -1519,85 +1666,196 @@ function editorTusu(e, ed) {
 }
 
 // ============================================================
-// Terminal
+// Terminal: kod editörü (static/editor.js) + çıktı paneli
 // ============================================================
 const ekran = $("#terminal-ekran");
-const girdi = $("#terminal-input");
-const istem = $("#terminal-istem");
-const gecmis = [];
-let gecmisKonum = 0;
-let blok = [];
+const TERMINAL_ANAHTAR = "se422-terminal";
+const tAyar = (() => {
+  try { return { kod: "", orijinal: "", editorYuzde: 45, tam: false, ...JSON.parse(localStorage.getItem(TERMINAL_ANAHTAR) || "{}") }; }
+  catch { return { kod: "", orijinal: "", editorYuzde: 45, tam: false }; }
+})();
+const tKaydet = () => { try { localStorage.setItem(TERMINAL_ANAHTAR, JSON.stringify(tAyar)); } catch { /* yok say */ } };
+const ORNEK_KOD = "import numpy as np\nimport pandas as pd\n\ndf = pd.DataFrame({'ad': ['Ada', 'Can'], 'yas': [30, 25]})\nprint(df)\ndf['yas'].mean()";
+const editor = kodEditoru($("#t-editor"), {
+  deger: tAyar.kod || ORNEK_KOD,
+  onCalistir: () => terminalKodu(editor.deger()),
+  onDegis: (kod) => { tAyar.kod = kod; tKaydet(); },
+});
+let tCalisiyor = false;
+let tZamanlayici = null;
 
 function terminaliAc() {
   $("#terminal").classList.add("acik");
-  setTimeout(() => girdi.focus(), 250);
+  setTimeout(() => editor.odak(), 250);
+}
+function terminaliKapat() {
+  $("#terminal").classList.remove("acik");
 }
 function ekranaYaz(metin, sinif) {
-  if (!metin) return;
+  if (!metin) return null;
   const satir = document.createElement("div");
   if (sinif) satir.className = sinif;
   satir.textContent = metin.replace(/\n$/, "");
   ekran.appendChild(satir);
   ekran.scrollTop = ekran.scrollHeight;
+  return satir;
+}
+// Traceback'i yazar: kullanıcı kodundaki satırlar ve son hata satırı vurgulanır, altına Türkçe açıklama eklenir
+function hatayiYaz(s) {
+  const kutu = document.createElement("div");
+  kutu.className = "t-hata";
+  const satirlar = s.hata.replace(/\n$/, "").split("\n");
+  satirlar.forEach((sat, i) => {
+    const el = document.createElement("div");
+    el.textContent = sat;
+    if (/File "<girdi>", line \d+/.test(sat)) {
+      el.className = "t-iz-ilgili";
+      const kod = satirlar[i + 1];
+      if (kod && !/^\s*File /.test(kod) && !/^\w+(Error|Exception|Interrupt)/.test(kod)) el.title = "Kodundaki ilgili satır";
+    } else if (i === satirlar.length - 1) {
+      el.className = "t-hata-son";
+    }
+    kutu.appendChild(el);
+  });
+  ekran.appendChild(kutu);
+  const aciklama = s.hata_tipi && hataAciklamasi(s.hata_tipi, s.hata_mesaji || "");
+  if (aciklama) {
+    const a = document.createElement("div");
+    a.className = "t-aciklama";
+    a.innerHTML = `<b>Bu hata ne demek?${s.satir ? ` (satır ${s.satir})` : ""}</b>`;
+    const p = document.createElement("div");
+    p.textContent = aciklama;
+    a.appendChild(p);
+    ekran.appendChild(a);
+  }
+  ekran.scrollTop = ekran.scrollHeight;
+}
+function tDurum(metin, sinif = "") {
+  const el = $("#t-durum");
+  el.textContent = metin;
+  el.className = "t-durum " + sinif;
 }
 async function terminalKodu(kod) {
-  girdi.disabled = true;
+  if (tCalisiyor || !kod.trim()) return;
+  tCalisiyor = true;
+  $("#t-calistir").disabled = true;
+  $("#t-durdur").disabled = false;
+  $("#t-nokta").classList.add("calisiyor");
+  editor.hataGoster(null);
+  const ozet = kod.split("\n");
+  ekranaYaz(ozet.map((s, i) => (i ? "... " : ">>> ") + s).slice(0, 6).join("\n") + (ozet.length > 6 ? `\n... (${ozet.length - 6} satır daha)` : ""), "t-girdi");
+  const baslangic = performance.now();
+  tDurum("Çalışıyor…", "calisiyor");
+  $("#t-sure").textContent = "";
+  tZamanlayici = setInterval(() => { $("#t-sure").textContent = `${((performance.now() - baslangic) / 1000).toFixed(1)} sn`; }, 100);
+  let s;
   try {
-    const s = await api("/api/terminal", { kod });
-    ekranaYaz(s.cikti);
-    ekranaYaz(s.hata, "t-hata");
+    s = await api("/api/terminal", { kod });
   } catch (e) {
-    ekranaYaz("Sunucuya ulaşılamadı: " + e.message, "t-hata");
+    s = { cikti: "", hata: "Sunucuya ulaşılamadı: " + e.message, hata_tipi: null };
   }
-  girdi.disabled = false;
-  girdi.focus();
+  clearInterval(tZamanlayici);
+  const sure = s.sure ?? (performance.now() - baslangic) / 1000;
+  ekranaYaz(s.cikti, "t-cikti");
+  ekranaYaz(s.stderr, "t-stderr");
+  if (s.hata) {
+    hatayiYaz(s);
+    if (s.satir) editor.hataGoster(s.satir);
+    tDurum(s.durduruldu ? "■ Durduruldu" : `✗ ${s.hata_tipi || "Hata"}`, "hata");
+  } else {
+    tDurum(s.cikti || s.stderr ? "✓ Tamamlandı" : "✓ Tamamlandı (çıktı yok)", "tamam");
+  }
+  $("#t-sure").textContent = `${sure < 0.01 ? "<0.01" : sure.toFixed(2)} sn`;
+  $("#t-nokta").classList.remove("calisiyor");
+  $("#t-calistir").disabled = false;
+  $("#t-durdur").disabled = true;
+  tCalisiyor = false;
 }
+// Slayttaki "Terminalde dene": kodu editöre yükler (orijinal olarak saklar) ve çalıştırır
 function terminaldeCalistir(kod) {
   terminaliAc();
-  ekranaYaz(kod.split("\n").map((s, i) => (i ? "... " : ">>> ") + s).join("\n"), "t-girdi");
+  tAyar.orijinal = kod;
+  editor.ayarla(kod);
   return terminalKodu(kod);
 }
-girdi.addEventListener("keydown", (e) => {
-  e.stopPropagation();
-  if (e.key === "Escape") { $("#terminal").classList.remove("acik"); return; }
-  if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-    if (!gecmis.length) return;
-    e.preventDefault();
-    gecmisKonum = Math.min(gecmis.length, Math.max(0, gecmisKonum + (e.key === "ArrowUp" ? -1 : 1)));
-    girdi.value = gecmis[gecmisKonum] ?? "";
-    return;
-  }
-  if (e.key !== "Enter") return;
-  e.preventDefault();
-  const satir = girdi.value;
-  girdi.value = "";
-  ekranaYaz((blok.length ? "... " : ">>> ") + satir, "t-girdi");
-  if (satir.trim()) { gecmis.push(satir); gecmisKonum = gecmis.length; }
-  if (blok.length || satir.trimEnd().endsWith(":")) {
-    if (satir.trim()) { blok.push(satir); istem.textContent = "..."; return; }
-    const kod = blok.join("\n");
-    blok = [];
-    istem.textContent = ">>>";
-    terminalKodu(kod);
-  } else if (satir.trim()) {
-    terminalKodu(satir);
+function tTamEkran(acik) {
+  tAyar.tam = acik;
+  tKaydet();
+  $("#terminal").classList.toggle("tam", acik);
+  $("#t-tam").setAttribute("aria-pressed", String(acik));
+  $("#t-tam").title = acik ? "Tam ekrandan çık" : "Tam ekran";
+}
+function tBolmeAyarla(yuzde) {
+  tAyar.editorYuzde = Math.min(85, Math.max(15, yuzde));
+  $("#t-govde").style.setProperty("--editor-yuzde", tAyar.editorYuzde + "%");
+  tKaydet();
+}
+tBolmeAyarla(tAyar.editorYuzde);
+tTamEkran(tAyar.tam);
+
+$("#t-calistir").addEventListener("click", () => terminalKodu(editor.deger()));
+$("#t-durdur").addEventListener("click", async () => {
+  tDurum("Durduruluyor…", "calisiyor");
+  try { await api("/api/terminal/durdur", {}); } catch { /* yanıt terminalKodu'ndan gelir */ }
+});
+$("#t-temizle").addEventListener("click", () => {
+  $$(":scope > :not(.t-bilgi)", ekran).forEach((d) => d.remove());
+  tDurum("Hazır");
+  $("#t-sure").textContent = "";
+  editor.hataGoster(null);
+  editor.odak();
+});
+$("#t-kod-sifirla").addEventListener("click", () => {
+  editor.ayarla(tAyar.orijinal || ORNEK_KOD);
+  tDurum(tAyar.orijinal ? "Kod slayttaki orijinal haline döndü" : "Kod örnek koda döndü");
+  editor.odak();
+});
+$("#t-kopyala").addEventListener("click", async () => {
+  const metin = $$(":scope > :not(.t-bilgi)", ekran).map((d) => d.innerText).join("\n");
+  try {
+    await navigator.clipboard.writeText(metin);
+    tDurum("⧉ Çıktı kopyalandı", "tamam");
+  } catch {
+    tDurum("Kopyalanamadı (tarayıcı izin vermedi)", "hata");
   }
 });
-girdi.addEventListener("paste", (e) => {
-  const metin = e.clipboardData.getData("text");
-  if (!metin.includes("\n")) return;
-  e.preventDefault();
-  terminaldeCalistir(metin.replace(/\n+$/, ""));
-});
-$("#terminal-temizle").addEventListener("click", () => { $$(":scope > div:not(.t-bilgi)", ekran).forEach((d) => d.remove()); girdi.focus(); });
 $("#terminal-sifirla").addEventListener("click", async () => {
   await api("/api/terminal/sifirla", {});
-  blok = [];
-  istem.textContent = ">>>";
   ekranaYaz("Oturum sıfırlandı: tüm değişkenler silindi.", "t-sistem");
 });
-$("#terminal-kapat").addEventListener("click", () => $("#terminal").classList.remove("acik"));
-ekran.addEventListener("click", () => { if (!getSelection().toString()) girdi.focus(); });
+$("#t-tam").addEventListener("click", () => tTamEkran(!tAyar.tam));
+$("#terminal-kapat").addEventListener("click", terminaliKapat);
+$("#terminal").addEventListener("ed-kacis", terminaliKapat);
+$("#terminal").addEventListener("keydown", (e) => {
+  e.stopPropagation();
+  if (e.key === "Escape") terminaliKapat();
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); terminalKodu(editor.deger()); }
+});
+// Editör ile çıktı arasındaki sürüklenebilir ayırıcı (fare, dokunma ve ok tuşları)
+(() => {
+  const ayirici = $("#t-ayirici");
+  const govde = $("#t-govde");
+  ayirici.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    ayirici.setPointerCapture(e.pointerId);
+    govde.classList.add("surukleniyor");
+    const tasi = (ev) => {
+      const r = govde.getBoundingClientRect();
+      tBolmeAyarla(((ev.clientY - r.top) / r.height) * 100);
+    };
+    const birak = () => {
+      govde.classList.remove("surukleniyor");
+      ayirici.removeEventListener("pointermove", tasi);
+      ayirici.removeEventListener("pointerup", birak);
+    };
+    ayirici.addEventListener("pointermove", tasi);
+    ayirici.addEventListener("pointerup", birak);
+  });
+  ayirici.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowUp") { e.preventDefault(); tBolmeAyarla(tAyar.editorYuzde - 5); }
+    if (e.key === "ArrowDown") { e.preventDefault(); tBolmeAyarla(tAyar.editorYuzde + 5); }
+  });
+})();
 
 // ============================================================
 // Genel olaylar
@@ -1605,6 +1863,20 @@ ekran.addEventListener("click", () => { if (!getSelection().toString()) girdi.fo
 document.addEventListener("click", (e) => {
   const t = e.target;
   const el = (s) => t.closest(s);
+  if (el("[data-sure-ipucu]")) {
+    // Dokunmatik ekranda ipucu tıklamayla açılıp kapanır
+    const ip = el("[data-sure-ipucu]");
+    const acik = ip.classList.contains("acik");
+    $$(".sure-ipucu.acik").forEach((x) => x.classList.remove("acik"));
+    if (!acik) ip.classList.add("acik");
+    return;
+  }
+  $$(".sure-ipucu.acik").forEach((x) => x.classList.remove("acik"));
+  if (el("[data-claude]")) {
+    claudeSecili = el("[data-claude]").dataset.claude;
+    if (sayfa === "claude") { claudeCiz(); $("#claude-icerik")?.scrollIntoView({ block: "start" }); } else git("claude");
+    return;
+  }
   if (el("[data-dene]")) { terminaldeCalistir(DENE_KODLARI[+el("[data-dene]").dataset.dene]); return; }
   if (el("[data-git]")) { git(el("[data-git]").dataset.git); return; }
   if (el("[data-tema]")) { temaSec(el("[data-tema]").dataset.tema || TEMALAR[durum.tema].sonraki); return; }
@@ -1647,6 +1919,14 @@ document.addEventListener("keydown", (e) => {
 // ============================================================
 temaUygula();
 yenile();
+// Claude'un özetleri listesi (bölüm başlıklarındaki "Bu bölümün Claude özeti →" bağlantısı ve sekme için)
+api("/api/ozetler")
+  .then((j) => {
+    OZET_LISTESI = j;
+    OZETLER = Object.fromEntries((j.ozetler || []).map((o) => [o.unite, o]));
+    if (!oturum) yenile();
+  })
+  .catch(() => { OZET_LISTESI = { ozetler: [], birlesik: null }; if (sayfa === "claude") claudeCiz(); });
 api("/api/alistirmalar")
   .then((liste) => { ALISTIRMALAR = Object.fromEntries(liste.map((a) => [a.id, a])); })
   .catch(() => { /* sunucu yoksa kod adımları uyarı gösterir */ });

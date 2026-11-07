@@ -1,0 +1,80 @@
+{
+ "uniteler": {
+  "u-temel": {
+   "no": 1,
+   "baslik": "Python Temelleri",
+   "dosya": "01-temeller.pdf"
+  },
+  "u-kontrol": {
+   "no": 2,
+   "baslik": "Karar ve Döngü Yapıları",
+   "dosya": "02-kontrol.pdf"
+  },
+  "u-fonk": {
+   "no": 3,
+   "baslik": "Fonksiyonlar",
+   "dosya": "03-fonksiyonlar.pdf"
+  },
+  "u-dosya": {
+   "no": 4,
+   "baslik": "Dosyalar ve İstisnalar",
+   "dosya": "04-dosyalar.pdf"
+  },
+  "u-liste": {
+   "no": 5,
+   "baslik": "Listeler ve Demetler",
+   "dosya": "05-listeler.pdf"
+  },
+  "u-str": {
+   "no": 6,
+   "baslik": "String'ler",
+   "dosya": "06-stringler.pdf"
+  },
+  "u-sozluk": {
+   "no": 7,
+   "baslik": "Sözlükler ve Kümeler",
+   "dosya": "07-sozlukler.pdf"
+  },
+  "u-sinif": {
+   "no": 8,
+   "baslik": "Sınıflar ve OOP",
+   "dosya": "08-siniflar.pdf"
+  },
+  "u-kalitim": {
+   "no": 9,
+   "baslik": "Kalıtım ve Çok Biçimlilik",
+   "dosya": "09-kalitim.pdf"
+  },
+  "u-ozyineleme": {
+   "no": 10,
+   "baslik": "Özyineleme",
+   "dosya": "10-ozyineleme.pdf"
+  },
+  "u-vt": {
+   "no": 11,
+   "baslik": "Veritabanı Programlama",
+   "dosya": "11-veritabani.pdf"
+  },
+  "u-ortam": {
+   "no": 12,
+   "baslik": "Python Ortamları",
+   "dosya": "12-ortamlar.pdf"
+  },
+  "u-np1": {
+   "no": 13,
+   "baslik": "NumPy Bölüm 1",
+   "dosya": "13-numpy1.pdf"
+  },
+  "u-np2": {
+   "no": 14,
+   "baslik": "NumPy Bölüm 2",
+   "dosya": "14-numpy2.pdf"
+  },
+  "u-pd": {
+   "no": 15,
+   "baslik": "Pandas",
+   "dosya": "15-pandas.pdf"
+  }
+ },
+ "birlesik": "tum-ozetler.pdf"
+}

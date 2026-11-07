@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 KLASOR = Path(__file__).resolve().parent
 sys.path.insert(0, str(KLASOR))
@@ -47,7 +48,7 @@ def calistir(kod):
     tampon = io.StringIO()
     try:
         with contextlib.redirect_stdout(tampon):
-            exec(kod, {"np": np, "__name__": "__main__"})
+            exec(kod, {"np": np, "pd": pd, "__name__": "__main__"})
     except Exception as e:  # noqa: BLE001
         return tampon.getvalue(), e
     return tampon.getvalue(), None
@@ -227,7 +228,7 @@ def soru_testi(soru, ders_idleri):
 
 def sinav_testleri(ders_idleri):
     bolum_on_ekleri = {"temel", "kontrol", "fonk", "dosya", "liste", "str", "sozluk", "sinif",
-                       "kalitim", "ozyineleme", "vt", "ortam", "np2"}
+                       "kalitim", "ozyineleme", "vt", "ortam", "np2", "pd"}
     for _ in range(300):
         sorular = sinav.sinav_olustur()
         if len(sorular) != sinav.SORU_SAYISI:

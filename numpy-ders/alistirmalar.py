@@ -6,6 +6,7 @@ Her kontrol bir (ifade, açıklama) çiftidir. İfade şu adlarla değerlendiril
     cikti          -> kullanıcının ekrana yazdırdıkları
     beklenen_cikti -> örnek çözümün ekrana yazdırdıkları
     np             -> numpy
+    pd             -> pandas
 """
 
 
@@ -19,6 +20,31 @@ def ayni_mi(ad):
 
 def ayni_deger(ad):
     return f"u.get('{ad}') == r['{ad}']", f"`{ad}` değeri doğru"
+
+
+def df_mi(ad):
+    return f"isinstance(u.get('{ad}'), pd.DataFrame)", f"`{ad}` adında bir pandas DataFrame tanımlanmış"
+
+
+def seri_ayni(ad):
+    """Series/DataFrame aynı etiketlere ve (NaN'lar dahil) aynı sayısal değerlere sahip mi?"""
+    return (f"u['{ad}'].shape == r['{ad}'].shape and u['{ad}'].index.equals(r['{ad}'].index) "
+            f"and np.allclose(u['{ad}'], r['{ad}'], equal_nan=True)", f"`{ad}` değerleri beklenenle aynı")
+
+
+# Titanic veri setinin (titanic.csv) 1–10 ve 62 numaralı yolcuları; 62'nin Embarked değeri eksiktir
+TITANIC = (
+    "df = pd.DataFrame({\n"
+    "    'PassengerId': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 62],\n"
+    "    'Survived': [0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1],\n"
+    "    'Pclass': [3, 1, 3, 1, 3, 3, 1, 3, 3, 2, 1],\n"
+    "    'Sex': ['male', 'female', 'female', 'female', 'male', 'male', 'male', 'male', 'female', 'female', 'female'],\n"
+    "    'Age': [22, 38, 26, 35, 35, None, 54, 2, 27, 14, 38],\n"
+    "    'Fare': [7.25, 71.2833, 7.925, 53.1, 8.05, 8.4583, 51.8625, 21.075, 11.1333, 30.0708, 80.0],\n"
+    "    'Embarked': ['S', 'C', 'S', 'S', 'S', 'Q', 'S', 'S', 'S', 'C', None],\n"
+    "})\n"
+)
+BAS = "import pandas as pd\n\n# Titanic veri setinden 11 yolcu\n" + TITANIC
 
 
 ALISTIRMALAR = [
@@ -604,6 +630,185 @@ ALISTIRMALAR += [
             ("np.allclose(u['sinav_ortalamalari'], r['sinav_ortalamalari'])", "`sinav_ortalamalari` doğru (axis=0)"),
             ("np.array_equal(u['ogrenci_toplamlari'], r['ogrenci_toplamlari'])", "`ogrenci_toplamlari` doğru (axis=1)"),
             ("u.get('en_yuksek') == 95", "`en_yuksek` == 95"),
+        ],
+    },
+    # ---------- Bölüm 15: Pandas (slayttaki 7 alıştırma seti) ----------
+    {
+        "id": "pandas-temeller",
+        "bolum": "Pandas",
+        "baslik": "Series ve DataFrame temelleri (Alıştırma 1)",
+        "soru": "• `student_grades` → {'Alice': 85, 'Bob': 92, 'Charlie': 78, 'David': 90} sözlüğünden bir Series\n"
+                "• `etiketler` ve `degerler` → student_grades'in .index ve .array öznitelikleri\n"
+                "• `df` → verilen `data` sözlüğünü tamamlayıp (Name: Alice, Bob, Charlie, David · Age: 24, 27, 22, 32 · "
+                "Major: CS, Math, Physics, CS) oluşturulan DataFrame\n"
+                "• `ilk_iki` → head() ile ilk iki satır · `boyut` → shape · `sayisal` → describe() çıktısının sütun adları (liste)",
+        "ipucu": "pd.Series(sozluk) · df.head(2) · df.shape · df.describe().columns.tolist()",
+        "baslangic": "import pandas as pd\n\nstudent_grades = \netiketler = \ndegerler = \n\n"
+                     "data = {\n    'Name': ,\n    'Age': ,\n    'Major': ,\n}\ndf = \n\nilk_iki = \nboyut = \nsayisal = \n",
+        "cozum": "import pandas as pd\n\nstudent_grades = pd.Series({'Alice': 85, 'Bob': 92, 'Charlie': 78, 'David': 90})\n"
+                 "etiketler = student_grades.index\ndegerler = student_grades.array\n\n"
+                 "data = {\n    'Name': ['Alice', 'Bob', 'Charlie', 'David'],\n    'Age': [24, 27, 22, 32],\n"
+                 "    'Major': ['CS', 'Math', 'Physics', 'CS'],\n}\ndf = pd.DataFrame(data)\n\n"
+                 "ilk_iki = df.head(2)\nboyut = df.shape\nsayisal = df.describe().columns.tolist()\n"
+                 "print(ilk_iki)\nprint(boyut)\ndf.info()\nprint(sayisal)\n",
+        "kontroller": [
+            ("isinstance(u.get('student_grades'), pd.Series)", "`student_grades` bir pandas Series"),
+            ("u['student_grades'].to_dict() == {'Alice': 85, 'Bob': 92, 'Charlie': 78, 'David': 90}", "`student_grades` değerleri doğru"),
+            ("list(u['etiketler']) == ['Alice', 'Bob', 'Charlie', 'David'] and list(u['degerler']) == [85, 92, 78, 90]",
+             "`etiketler` ve `degerler` doğru"),
+            df_mi("df"),
+            ("u['df'].equals(r['df'])", "`df` beklenen tabloyla aynı"),
+            ("u['ilk_iki'].equals(r['ilk_iki'])", "`ilk_iki` ilk iki satır"),
+            ("u.get('boyut') == (4, 3)", "`boyut` == (4, 3)"),
+            ("list(u.get('sayisal')) == ['Age']", "`sayisal` == ['Age'] (yalnızca sayısal sütun)"),
+        ],
+    },
+    {
+        "id": "pandas-io",
+        "bolum": "Pandas",
+        "baslik": "CSV okuma ve yazma (Alıştırma 2)",
+        "soru": "Hazır kod Titanic örneğini `titanic.csv` dosyasına yazar (bu ortamda internet olmadığı için URL yerine dosya kullanılır; "
+                "Excel alıştırması 2.4 openpyxl gerektirdiği için burada yok).\n"
+                "• `tum` → titanic.csv'nin tamamı\n• `secili` → yalnızca 'Survived', 'Pclass', 'Age' sütunları (usecols)\n"
+                "• `indeksli` → 'PassengerId' index olacak şekilde (index_col)\n"
+                "• `tum` içinden 30 yaşından büyükleri `titanic_over_30.csv` dosyasına index'siz yaz, sonra `geri` adıyla tekrar oku",
+        "ipucu": "pd.read_csv('titanic.csv', usecols=[...]) · index_col='PassengerId' · tum[tum['Age'] > 30].to_csv(..., index=False)",
+        "baslangic": "import os\n" + BAS + "df.to_csv('titanic.csv', index=False)\n"
+                     "if os.path.exists('titanic_over_30.csv'):\n    os.remove('titanic_over_30.csv')  # önceki denemeden kalan dosya\n\n"
+                     "tum = \nsecili = \nindeksli = \n\n# 30 yaşından büyükleri index'siz yaz\n\ngeri = \n",
+        "cozum": "import os\n" + BAS + "df.to_csv('titanic.csv', index=False)\n"
+                 "if os.path.exists('titanic_over_30.csv'):\n    os.remove('titanic_over_30.csv')  # önceki denemeden kalan dosya\n\n"
+                 "tum = pd.read_csv('titanic.csv')\nsecili = pd.read_csv('titanic.csv', usecols=['Survived', 'Pclass', 'Age'])\n"
+                 "indeksli = pd.read_csv('titanic.csv', index_col='PassengerId')\n\n"
+                 "tum[tum['Age'] > 30].to_csv('titanic_over_30.csv', index=False)\n\ngeri = pd.read_csv('titanic_over_30.csv')\nprint(geri)\n",
+        "kontroller": [
+            df_mi("tum"),
+            ("u['tum'].shape == (11, 7)", "`tum` 11 satır, 7 sütun"),
+            ("list(u['secili'].columns) == ['Survived', 'Pclass', 'Age']", "`secili` yalnızca Survived, Pclass, Age sütunlarını içeriyor"),
+            ("u['indeksli'].index.name == 'PassengerId' and 'PassengerId' not in u['indeksli'].columns", "`indeksli` PassengerId index'li"),
+            ("list(u['geri'].columns) == list(r['tum'].columns)", "Dosya index'siz yazılmış ('Unnamed: 0' sütunu yok)"),
+            ("len(u['geri']) == 5 and (u['geri']['Age'] > 30).all()", "`geri` 30 yaşından büyük 5 yolcuyu içeriyor"),
+        ],
+    },
+    {
+        "id": "pandas-secim",
+        "bolum": "Pandas",
+        "baslik": "Seçim ve filtreleme (Alıştırma 3)",
+        "soru": "Titanic örneğinde (`df`):\n• `pclass` → 'Pclass' sütunu · `uc_sutun` → 'Pclass', 'Sex', 'Age' sütunları\n"
+                "• `ilk_bes` → iloc ile ilk 5 satır (örnek küçük olduğu için 20 yerine 5) · `satir1` → loc ile index etiketi 1 olan satır\n"
+                "• `yas_ucret` → loc ile index 3'ten 6'ya (dahil) 'Age' ve 'Fare'\n• `minors` → 18 yaşından küçükler\n"
+                "• `kadin_1` → 1. sınıf, kadın ve hayatta kalanlar (bu örnekte 1. sınıf erkeklerden hayatta kalan olmadığı için slayttaki "
+                "'male' yerine 'female') · `sayi` → kadin_1'in satır sayısı (.shape ile)",
+        "ipucu": "df['Pclass'] → Series, df[[...]] → DataFrame · df.iloc[:5] · df.loc[3:6, ['Age', 'Fare']] · (koşul1) & (koşul2) & (koşul3)",
+        "baslangic": BAS + "\npclass = \nuc_sutun = \nilk_bes = \nsatir1 = \nyas_ucret = \nminors = \nkadin_1 = \nsayi = \n",
+        "cozum": BAS + "\npclass = df['Pclass']\nuc_sutun = df[['Pclass', 'Sex', 'Age']]\nilk_bes = df.iloc[:5]\nsatir1 = df.loc[1]\n"
+                 "yas_ucret = df.loc[3:6, ['Age', 'Fare']]\nminors = df[df['Age'] < 18]\n"
+                 "kadin_1 = df[(df['Pclass'] == 1) & (df['Sex'] == 'female') & (df['Survived'] == 1)]\nsayi = kadin_1.shape[0]\n"
+                 "print(type(pclass), type(uc_sutun))\nprint(yas_ucret)\nprint(sayi)\n",
+        "kontroller": [
+            ("isinstance(u.get('pclass'), pd.Series) and u['pclass'].equals(r['pclass'])", "`pclass` bir Series"),
+            ("isinstance(u.get('uc_sutun'), pd.DataFrame) and u['uc_sutun'].equals(r['uc_sutun'])", "`uc_sutun` üç sütunlu bir DataFrame"),
+            ("u['ilk_bes'].equals(r['ilk_bes'])", "`ilk_bes` ilk 5 satır"),
+            ("u['satir1'].equals(r['satir1'])", "`satir1` index etiketi 1 olan satır"),
+            ("u['yas_ucret'].equals(r['yas_ucret'])", "`yas_ucret` 3–6 arası (dahil) Age ve Fare"),
+            ("u['minors'].equals(r['minors'])", "`minors` 18 yaşından küçükler"),
+            ("u['kadin_1'].equals(r['kadin_1']) and u.get('sayi') == 3", "`kadin_1` doğru ve `sayi` == 3"),
+        ],
+    },
+    {
+        "id": "pandas-eksik",
+        "bolum": "Pandas",
+        "baslik": "Eksik veriyle çalışmak (Alıştırma 4)",
+        "soru": "Titanic örneğinde (`df`):\n• `eksik` → her sütundaki eksik değer sayısı · `en_cok` → en çok eksik verisi olan iki sütunun adı (liste)\n"
+                "• `df_no_age` → 'Age' eksik olan satırlar silinmiş · `df_filled` → eksik 'Age' değerleri 0 ile doldurulmuş\n"
+                "• `df_mean_filled` → eksik 'Age' değerleri tüm yolcuların yaş ortalamasıyla doldurulmuş\n"
+                "• Son olarak `df`'nin 'Embarked' sütunundaki eksik değeri sütunun modu (en sık değeri) ile doldur",
+        "ipucu": "df.isna().sum() · df.dropna(subset=['Age']) · df.copy() üzerinde df_x['Age'] = df_x['Age'].fillna(...) · df['Embarked'].mode()[0]",
+        "baslangic": BAS + "\neksik = \nen_cok = \ndf_no_age = \ndf_filled = \ndf_mean_filled = \n\n# Embarked'ı mod ile doldur\n",
+        "cozum": BAS + "\neksik = df.isna().sum()\nen_cok = eksik.sort_values(ascending=False).index[:2].tolist()\n"
+                 "df_no_age = df.dropna(subset=['Age'])\n"
+                 "df_filled = df.copy()\ndf_filled['Age'] = df_filled['Age'].fillna(0)\n"
+                 "df_mean_filled = df.copy()\ndf_mean_filled['Age'] = df_mean_filled['Age'].fillna(df['Age'].mean())\n\n"
+                 "df['Embarked'] = df['Embarked'].fillna(df['Embarked'].mode()[0])\nprint(eksik)\nprint(en_cok)\n",
+        "kontroller": [
+            ("u['eksik'].to_dict() == r['eksik'].to_dict()", "`eksik` sütun başına eksik sayıları"),
+            ("sorted(u.get('en_cok')) == ['Age', 'Embarked']", "`en_cok` == Age ve Embarked"),
+            ("u['df_no_age'].equals(r['df_no_age'])", "`df_no_age` Age eksik satırı silinmiş"),
+            ("u['df_filled']['Age'].equals(r['df_filled']['Age'])", "`df_filled` Age'deki eksik 0 ile doldurulmuş"),
+            ("np.allclose(u['df_mean_filled']['Age'], r['df_mean_filled']['Age'])", "`df_mean_filled` Age ortalamayla doldurulmuş"),
+            ("u['df']['Embarked'].isna().sum() == 0 and u['df']['Embarked'].equals(r['df']['Embarked'])", "Embarked mod ('S') ile doldurulmuş"),
+        ],
+    },
+    {
+        "id": "pandas-birlestir",
+        "bolum": "Pandas",
+        "baslik": "merge ve concat (Alıştırma 5)",
+        "soru": "Verilen `df1` ve `df2` için:\n• `ic` → student_id üzerinden varsayılan merge · `dis` → outer join\n"
+                "• `sol` → left join · `sag` → right join\n"
+                "• `bilesik` → ayrı dosyalardan okunmuş gibi index'leri 0'dan başlayan `part1` ve `part2`'yi concat ile birleştir; "
+                "index 0, 1, ..., 10 olmalı",
+        "ipucu": "pd.merge(df1, df2, on='student_id', how='outer') · pd.concat([part1, part2], ignore_index=True)",
+        "baslangic": BAS + "part1 = df.iloc[:6].reset_index(drop=True)\npart2 = df.iloc[6:].reset_index(drop=True)\n\n"
+                     "df1 = pd.DataFrame({'student_id': ['s1', 's2', 's3'], 'name': ['Ada', 'Can', 'Ece']})\n"
+                     "df2 = pd.DataFrame({'student_id': ['s1', 's2', 's4'], 'course': ['Math', 'Econ', 'Physics']})\n\n"
+                     "ic = \ndis = \nsol = \nsag = \nbilesik = \n",
+        "cozum": BAS + "part1 = df.iloc[:6].reset_index(drop=True)\npart2 = df.iloc[6:].reset_index(drop=True)\n\n"
+                 "df1 = pd.DataFrame({'student_id': ['s1', 's2', 's3'], 'name': ['Ada', 'Can', 'Ece']})\n"
+                 "df2 = pd.DataFrame({'student_id': ['s1', 's2', 's4'], 'course': ['Math', 'Econ', 'Physics']})\n\n"
+                 "ic = pd.merge(df1, df2, on='student_id')\ndis = pd.merge(df1, df2, on='student_id', how='outer')\n"
+                 "sol = pd.merge(df1, df2, on='student_id', how='left')\nsag = pd.merge(df1, df2, on='student_id', how='right')\n"
+                 "bilesik = pd.concat([part1, part2], ignore_index=True)\nprint(ic)\nprint(dis)\n",
+        "kontroller": [
+            ("sorted(u['ic']['student_id']) == ['s1', 's2']", "`ic`: yalnızca iki tarafta da olan s1, s2 (s3 yok)"),
+            ("sorted(u['dis']['student_id']) == ['s1', 's2', 's3', 's4']", "`dis`: tüm anahtarlar"),
+            ("len(u['sol']) == 3 and u['sol']['course'].isna().sum() == 1", "`sol`: 3 satır, s3'ün course değeri NaN"),
+            ("len(u['sag']) == 3 and u['sag']['name'].isna().sum() == 1", "`sag`: 3 satır, s4'ün name değeri NaN"),
+            ("list(u['bilesik'].index) == list(range(11))", "`bilesik` index'i 0–10 (ignore_index=True)"),
+            ("u['bilesik'].equals(r['bilesik'])", "`bilesik` tüm satırları içeriyor"),
+        ],
+    },
+    {
+        "id": "pandas-groupby",
+        "bolum": "Pandas",
+        "baslik": "groupby ile toplama (Alıştırma 6)",
+        "soru": "Titanic örneğinde (`df`):\n• `ort_yas` → cinsiyete göre ortalama 'Age' · `max_ucret` → her 'Pclass' için en yüksek 'Fare'\n"
+                "• `oran` → her 'Pclass' için hayatta kalma oranı ('Survived' ortalaması)\n"
+                "• `ozet` → 'Embarked'a göre isimli toplama: yas_ort (Age mean), yas_std (Age std), hayatta (Survived sum)\n"
+                "• df'ye 'Age_Group_Mean' sütunu ekle: yolcunun cinsiyetinin ortalama yaşı (transform)",
+        "ipucu": "df.groupby('Sex')['Age'].mean() · .agg(yas_ort=('Age', 'mean'), ...) · df.groupby('Sex')['Age'].transform('mean')",
+        "baslangic": BAS + "\nort_yas = \nmax_ucret = \noran = \nozet = \n\n# Age_Group_Mean sütunu\n",
+        "cozum": BAS + "\nort_yas = df.groupby('Sex')['Age'].mean()\nmax_ucret = df.groupby('Pclass')['Fare'].max()\n"
+                 "oran = df.groupby('Pclass')['Survived'].mean()\n"
+                 "ozet = df.groupby('Embarked').agg(\n    yas_ort=('Age', 'mean'),\n    yas_std=('Age', 'std'),\n    hayatta=('Survived', 'sum'),\n)\n\n"
+                 "df['Age_Group_Mean'] = df.groupby('Sex')['Age'].transform('mean')\nprint(ozet)\nprint(df)\n",
+        "kontroller": [
+            seri_ayni("ort_yas"),
+            seri_ayni("max_ucret"),
+            seri_ayni("oran"),
+            ("list(u['ozet'].columns) == ['yas_ort', 'yas_std', 'hayatta']", "`ozet` sütunları yas_ort, yas_std, hayatta"),
+            seri_ayni("ozet"),
+            ("'Age_Group_Mean' in u['df'] and np.allclose(u['df']['Age_Group_Mean'], r['df']['Age_Group_Mean'])",
+             "`Age_Group_Mean` her yolcunun cinsiyet ortalaması"),
+        ],
+    },
+    {
+        "id": "pandas-pivot",
+        "bolum": "Pandas",
+        "baslik": "pivot_table ve melt (Alıştırma 7)",
+        "soru": "Titanic örneğinde (`df`):\n• `yas_pivot` → 'Sex' satırlarda, 'Pclass' sütunlarda ortalama 'Age'\n"
+                "• `hayatta_pivot` → aynı düzende hayatta kalanların toplamı ('Survived', aggfunc='sum')\n"
+                "• `uzun` → yas_pivot'u reset_index() ve pd.melt() ile tekrar uzun formata çevir (id_vars=['Sex'])",
+        "ipucu": "df.pivot_table(values='Age', index='Sex', columns='Pclass') · pd.melt(yas_pivot.reset_index(), id_vars=['Sex'])",
+        "baslangic": BAS + "\nyas_pivot = \nhayatta_pivot = \nuzun = \n",
+        "cozum": BAS + "\nyas_pivot = df.pivot_table(values='Age', index='Sex', columns='Pclass')\n"
+                 "hayatta_pivot = df.pivot_table(values='Survived', index='Sex', columns='Pclass', aggfunc='sum')\n"
+                 "uzun = pd.melt(yas_pivot.reset_index(), id_vars=['Sex'])\nprint(yas_pivot)\nprint(hayatta_pivot)\nprint(uzun)\n",
+        "kontroller": [
+            df_mi("yas_pivot"),
+            seri_ayni("yas_pivot"),
+            seri_ayni("hayatta_pivot"),
+            df_mi("uzun"),
+            ("u['uzun'].shape == (6, 3) and 'Sex' in u['uzun'].columns", "`uzun` 6 satır (2 cinsiyet × 3 sınıf), Sex sütunu var"),
         ],
     },
 ]

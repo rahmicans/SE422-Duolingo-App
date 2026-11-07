@@ -1,4 +1,4 @@
-"""Final sınavı: Python bölümleri (Week 2–5) ve NumPy Bölüm 2 için soru şablonları.
+"""Final sınavı: Python bölümleri (Week 2–5), NumPy Bölüm 2 ve Pandas için soru şablonları.
 
 Her şablon rastgele parametrelerle bir kod üretir; doğru cevap kodun gerçekten
 çalıştırılmasıyla bulunur. Şablonlar @sablon(bolum) ile hangi bölüme ait olduklarını bildirir.
@@ -10,6 +10,7 @@ import random
 import sqlite3
 
 import numpy as np
+import pandas as pd
 
 SABLONLAR = []      # (bolum, fonksiyon)
 HATA = "Hata verir"
@@ -27,7 +28,7 @@ def calistir(kod):
     tampon = io.StringIO()
     try:
         with contextlib.redirect_stdout(tampon):
-            exec(kod, {"np": np, "__name__": "__main__"})
+            exec(kod, {"np": np, "pd": pd, "__name__": "__main__"})
     except Exception:  # noqa: BLE001
         return tampon.getvalue().strip(), True
     return tampon.getvalue().strip(), False
@@ -653,6 +654,217 @@ def ufunc_soru():
     return secmeli(kod, yanlis, "Ufunc'lar eleman eleman çalışır; karşılaştırma ufunc'ları boolean dizi döndürür.", "np2-ufunc", f"uf:{a}:{fn}")
 
 
+# ============================ Pandas ============================
+
+ISIMLER = ["Ada", "Can", "Ece", "Mert", "Zeynep", "Deniz", "Selin", "Emre"]
+
+
+@sablon("pd")
+def pd_series_etiket():
+    etiketler = random.sample(list("abcdefgh"), 4)
+    degerler = random.sample(range(1, 50), 4)
+    hedef = random.choice(etiketler)
+    erisim = random.choice([f"s['{hedef}']", f"s.loc['{hedef}']"])
+    kod = f"s = pd.Series({degerler}, index={etiketler})\nprint({erisim})"
+    yanlis = [str(v) for v in degerler if v != degerler[etiketler.index(hedef)]] + [HATA]
+    return secmeli(kod, yanlis, "Series'te değerlere index etiketiyle erişilir.", "pd-series", f"pdse:{degerler}:{etiketler}:{erisim}")
+
+
+@sablon("pd")
+def pd_series_sozluk():
+    adlar = random.sample(ISIMLER, random.randint(3, 6))
+    notlar = {ad: random.randint(40, 100) for ad in adlar}
+    oz = random.choice(["s.size", "s.index[0]", "s.index[-1]", "s.shape", "s.max()"])
+    return yaz(f"s = pd.Series({notlar})\nprint({oz})", "Sözlükten Series: anahtarlar index, değerler veri olur.",
+               "pd-series", f"pdsd:{notlar}:{oz}")
+
+
+@sablon("pd")
+def pd_hizalama():
+    a_etiket = sorted(random.sample(list("abcdef"), 3))
+    b_etiket = sorted(random.sample(list("abcdef"), 3))
+    a_deger, b_deger = random.sample(range(1, 10), 3), random.sample(range(10, 90, 10), 3)
+    on = f"a = pd.Series({a_deger}, index={a_etiket})\nb = pd.Series({b_deger}, index={b_etiket})\n"
+    kod = on + "print((a + b).tolist())"
+    yanlis = [kod_alt(f"print([float(x + y) for x, y in zip({a_deger}, {b_deger})])"), kod_alt(on + "print((a + b).dropna().tolist())"),
+              kod_alt(on + "print(a.add(b, fill_value=0).tolist())")]
+    return secmeli(kod, yanlis, "İşlemler etiketlere göre hizalanır; index birleşimdir ve yalnızca bir tarafta olan etiket NaN olur.",
+                   "pd-dataframe", f"pdal:{a_etiket}:{b_etiket}:{a_deger}:{b_deger}")
+
+
+@sablon("pd")
+def pd_shape():
+    r, c = random.randint(2, 7), random.randint(1, 5)
+    sutunlar = {f"c{i}": list(range(i, i + r)) for i in range(c)}
+    kod = f"df = pd.DataFrame({sutunlar})\nprint(df.shape)"
+    return secmeli(kod, [str((c, r)), str(r * c), str((r,)), str((r, c + 1))], "shape (satır, sütun) tuple'ıdır.",
+                   "pd-inceleme", f"pdsh:{r}:{c}")
+
+
+@sablon("pd")
+def pd_betimsel():
+    yaslar = random.sample(range(18, 70), random.choice([4, 5, 6]))
+    fn = random.choice(["mean()", "median()", "max()", "min()", "count()", "quantile(0.5)"])
+    return yaz(f"df = pd.DataFrame({{'Age': {yaslar}}})\nprint(df['Age'].{fn})",
+               "mean ortalama, median/50% ortadaki değer, count eksik olmayan değer sayısıdır.", "pd-inceleme", f"pdbt:{yaslar}:{fn}")
+
+
+@sablon("pd")
+def pd_loc_iloc():
+    n = random.randint(5, 8)
+    a = random.randint(0, n - 3)
+    b = random.randint(a + 1, n - 1)
+    fn = random.choice(["loc", "iloc"])
+    on = f"df = pd.DataFrame({{'x': {list(range(10, 10 * (n + 1), 10))}}})\n"
+    kod = on + f"print(df.{fn}[{a}:{b}, {'0' if fn == 'iloc' else repr('x')}].tolist())"
+    diger = "iloc" if fn == "loc" else "loc"
+    yanlis = [kod_alt(on + f"print(df.{diger}[{a}:{b}, {'0' if diger == 'iloc' else repr('x')}].tolist())"),
+              kod_alt(on + f"print(df.iloc[{a + 1}:{b + 1}, 0].tolist())"), kod_alt(on + f"print(df.iloc[{a}:{b + 2}, 0].tolist())")]
+    return secmeli(kod, yanlis, "loc etiket temellidir ve bitiş dahildir; iloc konum temellidir ve bitiş hariçtir.",
+                   "pd-secim", f"pdli:{n}:{a}:{b}:{fn}")
+
+
+@sablon("pd")
+def pd_filtre():
+    yaslar = [random.randint(1, 70) for _ in range(6)]
+    cinsiyet = [random.choice(["male", "female"]) for _ in range(6)]
+    esik = random.choice([18, 30, 40])
+    kosul = random.choice([f"df['Age'] > {esik}", f"(df['Age'] > {esik}) & (df['Sex'] == 'male')",
+                           f"(df['Age'] < {esik}) | (df['Sex'] == 'female')", f"~(df['Age'] > {esik})"])
+    return yaz(f"df = pd.DataFrame({{'Age': {yaslar}, 'Sex': {cinsiyet}}})\nprint(len(df[{kosul}]))",
+               "Maske True olan satırlar seçilir; & ve, | veya, ~ değil.", "pd-filtre", f"pdfl:{yaslar}:{cinsiyet}:{kosul}")
+
+
+@sablon("pd")
+def pd_eksik_say():
+    a = [random.choice([None, random.randint(1, 9)]) for _ in range(5)]
+    b = [random.choice([None, random.randint(1, 9)]) for _ in range(5)]
+    ifade = random.choice(["df.isna().sum().sum()", "df['a'].isna().sum()", "df['b'].isnull().sum()", "df['a'].count()"])
+    return yaz(f"df = pd.DataFrame({{'a': {a}, 'b': {b}}})\nprint({ifade})",
+               "isna()/isnull() eksikleri True yapar; sum() True'ları sayar. count() eksik olmayanları sayar.", "pd-eksik", f"pdes:{a}:{b}:{ifade}")
+
+
+@sablon("pd")
+def pd_dropna():
+    a = [1, None, 3, None, 5]
+    b = [random.choice([None, 7]) for _ in range(5)]
+    c = [random.choice([None, 9]) for _ in range(5)]
+    cagri = random.choice(["dropna()", "dropna(how='all')", "dropna(axis=1)", "dropna(thresh=2)"])
+    on = f"df = pd.DataFrame({{'a': {a}, 'b': {b}, 'c': {c}}})\n"
+    yanlis = [kod_alt(on + f"print(df.{x}.shape)") for x in ["dropna()", "dropna(how='all')", "dropna(axis=1)", "dropna(thresh=2)"] if x != cagri]
+    return secmeli(on + f"print(df.{cagri}.shape)", yanlis + [str((5, 3))],
+                   "how='any' (varsayılan) herhangi bir NaN, how='all' tamamı NaN olan satırı siler; axis=1 sütun siler; thresh en az o kadar geçerli değeri olanı tutar.",
+                   "pd-doldur", f"pddr:{b}:{c}:{cagri}")
+
+
+@sablon("pd")
+def pd_fillna():
+    s = [float(random.randint(1, 9)), None, float(random.randint(1, 9)), None, float(random.randint(1, 9))]
+    cagri = random.choice(["fillna(0)", "ffill()", "bfill()", "fillna(s.max())"])
+    on = f"s = pd.Series({s})\n"
+    yanlis = [kod_alt(on + f"print(s.{x}.tolist())") for x in ["fillna(0)", "ffill()", "bfill()", "fillna(s.max())", "dropna()"] if x != cagri]
+    return secmeli(on + f"print(s.{cagri}.tolist())", yanlis,
+                   "fillna sabit değerle, ffill son bilinen değerle, bfill sonraki değerle doldurur.", "pd-doldur", f"pdfn:{s}:{cagri}")
+
+
+@sablon("pd")
+def pd_merge_how():
+    sol = sorted(random.sample(["s1", "s2", "s3", "s4", "s5"], 3))
+    sag = sorted(random.sample(["s1", "s2", "s3", "s4", "s5"], 3))
+    how = random.choice(["inner", "outer", "left", "right"])
+    on = f"df1 = pd.DataFrame({{'id': {sol}, 'ad': {random.sample(ISIMLER, 3)}}})\ndf2 = pd.DataFrame({{'id': {sag}, 'ders': ['Math', 'Econ', 'Physics']}})\n"
+    kod = on + f"print(len(pd.merge(df1, df2, on='id', how='{how}')))"
+    yanlis = [kod_alt(on + f"print(len(pd.merge(df1, df2, on='id', how='{h}')))") for h in ["inner", "outer", "left", "right"] if h != how]
+    yanlis += ["0", "6", "5"]
+    return secmeli(kod, yanlis, "inner kesişim, outer birleşim, left soldaki tüm anahtarlar, right sağdaki tüm anahtarlar.",
+                   "pd-birlestir", f"pdmg:{sol}:{sag}:{how}")
+
+
+@sablon("pd")
+def pd_concat():
+    n1, n2 = random.randint(1, 3), random.randint(1, 3)
+    ignore = random.choice([True, False])
+    on = f"a = pd.DataFrame({{'x': {list(range(n1))}}})\nb = pd.DataFrame({{'x': {list(range(n2))}}})\n"
+    kod = on + f"print(pd.concat([a, b]{', ignore_index=True' if ignore else ''}).index.tolist())"
+    yanlis = [kod_alt(on + f"print(pd.concat([a, b]{'' if ignore else ', ignore_index=True'}).index.tolist())"),
+              str(list(range(1, n1 + n2 + 1))), str(list(range(max(n1, n2))))]
+    return secmeli(kod, yanlis, "concat varsayılan olarak orijinal index'leri korur; ignore_index=True yeni RangeIndex oluşturur.",
+                   "pd-birlestir", f"pdcc:{n1}:{n2}:{ignore}")
+
+
+@sablon("pd")
+def pd_groupby():
+    gruplar = [random.choice("ab") for _ in range(5)]
+    if len(set(gruplar)) == 1:
+        gruplar[0] = "b" if gruplar[0] == "a" else "a"
+    degerler = [random.randint(1, 9) for _ in range(5)]
+    fn = random.choice(["sum", "max", "min", "count"])
+    on = f"df = pd.DataFrame({{'g': {gruplar}, 'v': {degerler}}})\n"
+    kod = on + f"print(df.groupby('g')['v'].{fn}().to_dict())"
+    yanlis = [kod_alt(on + f"print(df.groupby('g')['v'].{x}().to_dict())") for x in ["sum", "max", "min", "count"] if x != fn]
+    return secmeli(kod, yanlis, "groupby veriyi gruplara böler, her gruba fonksiyonu uygular, sonucu grup anahtarlarıyla birleştirir.",
+                   "pd-groupby", f"pdgb:{gruplar}:{degerler}:{fn}")
+
+
+@sablon("pd")
+def pd_transform():
+    gruplar = random.sample(["a", "a", "b", "b", "c"], 5)
+    degerler = [random.randint(1, 9) for _ in range(5)]
+    fn = random.choice(["sum", "max", "min"])
+    on = f"df = pd.DataFrame({{'g': {gruplar}, 'v': {degerler}}})\n"
+    kod = on + f"print(df.groupby('g')['v'].transform('{fn}').tolist())"
+    yanlis = [kod_alt(on + f"print(df.groupby('g')['v'].{fn}().tolist())"), kod_alt(on + "print(df['v'].tolist())"),
+              kod_alt(on + f"print([df['v'].{fn}()] * 5)")]
+    return secmeli(kod, yanlis, "transform grup sonucunu orijinal satırlara yayar; sonuç orijinalle aynı uzunluktadır.",
+                   "pd-groupby", f"pdtf:{gruplar}:{degerler}:{fn}")
+
+
+@sablon("pd")
+def pd_pivot():
+    satir = random.choice(["['m', 'f', 'm', 'f']", "['m', 'm', 'f', 'f']", "['f', 'm', 'm', 'm']"])
+    degerler = [random.randint(1, 9) * 10 for _ in range(4)]
+    aggfunc = random.choice([None, "sum", "max", "count"])
+    on = f"df = pd.DataFrame({{'s': {satir}, 'c': [1, 1, 1, 1], 'v': {degerler}}})\n"
+    ek = f", aggfunc='{aggfunc}'" if aggfunc else ""
+    kod = on + f"print(df.pivot_table(values='v', index='s', columns='c'{ek}).loc['m', 1])"
+    yanlis = [kod_alt(on + f"print(df.pivot_table(values='v', index='s', columns='c', aggfunc='{a}').loc['m', 1])")
+              for a in ["mean", "sum", "max", "count"] if a != (aggfunc or "mean")]
+    return secmeli(kod, yanlis, "pivot_table: index satırlar, columns sütunlar, values hücreler; aggfunc varsayılan olarak ortalamadır.",
+                   "pd-reshape", f"pdpv:{satir}:{degerler}:{aggfunc}")
+
+
+@sablon("pd")
+def pd_melt():
+    n, k = random.randint(2, 4), random.randint(2, 4)
+    yillar = {str(2020 + i): list(range(i, i + n)) for i in range(k)}
+    kod = f"genis = pd.DataFrame({{'id': {list(range(n))}, **{yillar}}})\nprint(pd.melt(genis, id_vars=['id']).shape)"
+    return secmeli(kod, [str((n, k + 1)), str((n * k, k)), str((n + k, 3)), str((n * (k + 1), 3))],
+                   "melt: her (id, eski sütun) çifti bir satır olur; sütunlar id, variable, value.", "pd-reshape", f"pdml:{n}:{k}")
+
+
+@sablon("pd")
+def pd_zaman():
+    ay, gun = random.randint(1, 11), random.randint(1, 28)
+    fark = random.randint(2, 60)
+    bas = pd.Timestamp(2024, ay, gun)
+    son = bas + pd.Timedelta(days=fark)
+    ifade = random.choice(["(t2 - t1).days", "t2.month", "t2.day", "len(pd.date_range(t1, t2, freq='D'))"])
+    return yaz(f"t1 = pd.Timestamp('{bas.date()}')\nt2 = pd.Timestamp('{son.date()}')\nprint({ifade})",
+               "Timestamp farkı bir Timedelta'dır; date_range iki ucu da dahil eder.", "pd-zaman", f"pdzm:{bas.date()}:{fark}:{ifade}")
+
+
+@sablon("pd")
+def pd_resample():
+    n = random.randint(5, 12)
+    bas = random.choice(["2024-01-29", "2024-02-26", "2024-03-28", "2024-04-27"])
+    fn = random.choice(["sum", "count", "max"])
+    kod = (f"ts = pd.Series(range(1, {n + 1}), index=pd.date_range('{bas}', periods={n}, freq='D'))\n"
+           f"print(ts.resample('MS').{fn}().tolist())")
+    yanlis = [kod_alt(kod.replace(f".{fn}()", f".{x}()")) for x in ["sum", "count", "max", "min"] if x != fn]
+    return secmeli(kod, yanlis, "resample('MS') günlük veriyi aylara böler (ay başı etiketli) ve her aya toplama fonksiyonu uygular.",
+                   "pd-zaman", f"pdrs:{n}:{bas}:{fn}")
+
+
 # ============================ Kavram soruları ============================
 # (ders id, doğru ifade, yanlış ifade)
 
@@ -710,4 +922,17 @@ KAVRAMLAR = [
     ("np2-birlestir", "vstack, axis=0 boyunca concatenate ile eşdeğerdir.", "np.split eşit bölünemeyen dizileri otomatik dengeler."),
     ("np2-ufunc", "Broadcasting esnetme sırasında bellekte gerçekten kopya oluşturmaz.", "Broadcasting'de şekiller en soldaki boyuttan karşılaştırılmaya başlanır."),
     ("np2-toplama", "axis=0 ile toplama her sütun için bir sonuç üretir.", "Toplama fonksiyonları axis verilmezse her satır için ayrı sonuç döndürür."),
+    ("pd-giris", "Pandas'ın iki temel veri yapısı Series ve DataFrame'dir.", "Pandas'ın tek veri yapısı ndarray'dir."),
+    ("pd-series", "Series'i basit bir diziden ayıran, ona bağlı etiket dizisi (index) dir.", "Series etiket içermeyen tek boyutlu bir listedir."),
+    ("pd-dataframe", "DataFrame kavramsal olarak aynı index'i paylaşan Series'lerden oluşan bir sözlüktür.", "DataFrame her sütunu farklı index'e sahip bağımsız listelerden oluşur."),
+    ("pd-inceleme", "df.shape ve df.dtypes öznitelik, df.info() metottur.", "df.shape parantezle çağrılması gereken bir metottur."),
+    ("pd-io", "CSV yazarken index=False kullanılmazsa okuma sırasında 'Unnamed: 0' sütunu oluşur.", "to_csv varsayılan olarak index'i yazmaz."),
+    ("pd-secim", "loc dilimlerinde bitiş etiketi dahildir.", "loc dilimlerinde bitiş etiketi hariçtir."),
+    ("pd-filtre", "if df['Age'] > 30: ifadesi 'truth value of a Series is ambiguous' hatası verir.", "if df['Age'] > 30: ifadesi tüm satırları tek tek kontrol eder."),
+    ("pd-eksik", "Bir int sütununa tek bir NaN eklenirse sütun float64'e yükseltilir.", "np.nan int sütunlarında tip değişmeden saklanabilir."),
+    ("pd-doldur", "dropna(thresh=n) en az n eksik olmayan değeri olan satırları tutar.", "dropna(thresh=n) en az n eksik değeri olan satırları tutar."),
+    ("pd-birlestir", "merge'in varsayılan join türü inner'dır.", "merge'in varsayılan join türü outer'dır."),
+    ("pd-groupby", "df.groupby() çağrısı tek başına hesaplama yapmaz; tembel bir nesne döndürür.", "df.groupby() çağrısı tüm grupların ortalamasını hemen hesaplar."),
+    ("pd-reshape", "pivot_table'da aggfunc verilmezse ortalama kullanılır.", "pivot_table'da aggfunc verilmezse toplam kullanılır."),
+    ("pd-zaman", "pd.to_datetime string'leri Timestamp nesnelerine çevirir.", "pd.to_datetime tarihleri string'e çevirir."),
 ]
